@@ -1,7 +1,21 @@
 import { google } from "googleapis";
 
-export const SHEET_ID = process.env.SHEET_ID;
-export const MAIN_SHEET = process.env.MAIN_SHEET || "工作表1";
+function cleanEnv(v) {
+  if (!v) return "";
+  v = v.trim();
+  // Remove surrounding quotes
+  if (v.startsWith('"') && v.endsWith('"')) {
+    v = v.substring(1, v.length - 1);
+  } else if (v.startsWith("'") && v.endsWith("'")) {
+    v = v.substring(1, v.length - 1);
+  }
+  // Remove literal \n sequences at the end from shell copy-paste errors
+  v = v.replace(/\\n$/, '');
+  return v;
+}
+
+export const SHEET_ID = cleanEnv(process.env.SHEET_ID);
+export const MAIN_SHEET = cleanEnv(process.env.MAIN_SHEET) || "工作表1";
 export const LIST_SHEET = process.env.LIST_SHEET || "List";
 export const WAITING_STATUS = process.env.WAITING_STATUS || "Waiting for Confirm";
 export const CONFIRMED_STATUS = process.env.CONFIRMED_STATUS || "Confirmed";
@@ -22,10 +36,18 @@ export function toA1Column(n) {
 }
 
 export function getSheetsClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  let key = process.env.GOOGLE_PRIVATE_KEY;
+  const rawEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const rawKey = process.env.GOOGLE_PRIVATE_KEY;
+
+  const email = cleanEnv(rawEmail);
+  let key = cleanEnv(rawKey);
+
+  console.log(`[DEBUG] Auth Attempt - Email length: ${email.length}, SheetID: ${SHEET_ID}`);
+
   if (!SHEET_ID) throw new Error("Missing env: SHEET_ID");
   if (!email || !key) throw new Error("Missing env: GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY");
+
+  // Handle literal newlines and escaped \n
   key = key.replace(/\\n/g, "\n");
 
   const auth = new google.auth.JWT({
