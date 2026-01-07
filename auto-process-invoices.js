@@ -59,17 +59,18 @@ async function processInvoices() {
                 continue;
             }
 
-            // 3. Download file
-            console.log('Downloading file...');
-            const driveRes = await drive.files.get(
-                { fileId: file.id, alt: 'media', supportsAllDrives: true },
-                { responseType: 'arraybuffer' }
-            );
-            const buffer = Buffer.from(driveRes.data);
+            try {
+                // 3. Download file
+                console.log('Downloading file...');
+                const driveRes = await drive.files.get(
+                    { fileId: file.id, alt: 'media', supportsAllDrives: true },
+                    { responseType: 'arraybuffer' }
+                );
+                const buffer = Buffer.from(driveRes.data);
 
-            // 4. Extract data with Gemini
-            console.log('Extracting data with Gemini...');
-            const prompt = `请分析这张发票图片。提取以下信息并以严格的 JSON 格式返回，不要包含任何 Markdown 格式或解释性文字：
+                // 4. Extract data with Gemini
+                console.log('Extracting data with Gemini...');
+                const prompt = `请分析这张发票图片。提取以下信息并以严格的 JSON 格式返回，不要包含任何 Markdown 格式或解释性文字：
 invoice_number (发票号码)
 date (日期, 格式 YYYY-MM-DD)
 vendor_name (供应商名称)
@@ -79,55 +80,58 @@ total_amount (总金额, 数字格式)
 currency (货币单位选择其一:GBP/HKD/USD/EUR/SEK/DKK/CHF/CNY/CAD/AED)
 category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/office expense/Communication/IT expense/Meal)`;
 
-            const result = await model.generateContent([
-                {
-                    inlineData: {
-                        data: buffer.toString('base64'),
-                        mimeType: file.mimeType
-                    }
-                },
-                prompt
-            ]);
+                const result = await model.generateContent([
+                    {
+                        inlineData: {
+                            data: buffer.toString('base64'),
+                            mimeType: file.mimeType
+                        }
+                    },
+                    prompt
+                ]);
 
-            const responseText = result.response.text();
-            console.log('Gemini raw response:', responseText);
+                const responseText = result.response.text();
+                console.log('Gemini raw response:', responseText);
 
-            // Robust JSON extraction
-            let jsonStr = responseText;
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                jsonStr = jsonMatch[0];
-            }
+                // Robust JSON extraction
+                let jsonStr = responseText;
+                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    jsonStr = jsonMatch[0];
+                }
 
-            const invoiceData = JSON.parse(jsonStr);
+                const invoiceData = JSON.parse(jsonStr);
 
-            // 5. Insert into Supabase
-            console.log('Inserting into Supabase...');
-            const { error: insertError } = await supabase
-                .from('invoices')
-                .insert([{
-                    file_id: file.id,
-                    invoice_date: invoiceData.date,
-                    vendor: invoiceData.vendor_name,
-                    amount: parseFloat(invoiceData.total_amount),
-                    currency: invoiceData.currency,
-                    invoice_number: invoiceData.invoice_number,
-                    location_city: invoiceData.City,
-                    country: invoiceData.Country,
-                    category: invoiceData.category,
-                    file_link: file.webViewLink,
-                    status: 'Waiting for Confirm'
-                }]);
+                // 5. Insert into Supabase
+                console.log('Inserting into Supabase...');
+                const { error: insertError } = await supabase
+                    .from('invoices')
+                    .insert([{
+                        file_id: file.id,
+                        invoice_date: invoiceData.date,
+                        vendor: invoiceData.vendor_name,
+                        amount: parseFloat(invoiceData.total_amount),
+                        currency: invoiceData.currency,
+                        invoice_number: invoiceData.invoice_number,
+                        location_city: invoiceData.City,
+                        country: invoiceData.Country,
+                        category: invoiceData.category,
+                        file_link: file.webViewLink,
+                        status: 'Waiting for Confirm'
+                    }]);
 
-            if (insertError) {
-                console.error('Error inserting into Supabase:', insertError.message);
-            } else {
-                console.log('Successfully processed and saved to Supabase.');
+                if (insertError) {
+                    console.error('Error inserting into Supabase:', insertError.message);
+                } else {
+                    console.log('Successfully processed and saved to Supabase.');
+                }
+            } catch (fileErr) {
+                console.error(`Error processing file ${file.name}:`, fileErr.message || fileErr);
             }
         }
 
     } catch (err) {
-        console.error('An unexpected error occurred:', err);
+        console.error('An unexpected error occurred during scan:', err);
     }
 
     console.log('\n--- Processing Finished ---');
