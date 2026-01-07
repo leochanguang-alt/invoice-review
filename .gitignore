@@ -1,10 +1,16 @@
 node_modules/
 .env
 .env.local
+.env*.local
 *.json
 !package.json
 !package-lock.json
 !vercel.json
 .DS_Store
-debug-auth.js
+*.log
+headers_dump.txt
+verify-migration.js
+debug-migration-data.js
+dump-all-headers.js
 bui-expense-management-607a0384898d.json
+.vercel

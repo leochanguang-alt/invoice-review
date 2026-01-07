@@ -15,10 +15,14 @@ function cleanEnv(v) {
 }
 
 export const SHEET_ID = cleanEnv(process.env.SHEET_ID);
-export const MAIN_SHEET = cleanEnv(process.env.MAIN_SHEET) || "工作表1";
+export const MAIN_SHEET = cleanEnv(process.env.MAIN_SHEET) || "Main";
 export const LIST_SHEET = process.env.LIST_SHEET || "List";
 export const WAITING_STATUS = process.env.WAITING_STATUS || "Waiting for Confirm";
 export const CONFIRMED_STATUS = process.env.CONFIRMED_STATUS || "Confirmed";
+
+export const GOOGLE_CLIENT_ID = cleanEnv(process.env.GOOGLE_CLIENT_ID);
+export const GOOGLE_CLIENT_SECRET = cleanEnv(process.env.GOOGLE_CLIENT_SECRET);
+export const GOOGLE_REFRESH_TOKEN = cleanEnv(process.env.GOOGLE_REFRESH_TOKEN);
 
 export function norm(v) {
   return (v ?? "").toString().trim();
@@ -36,27 +40,45 @@ export function toA1Column(n) {
 }
 
 export function getSheetsClient() {
+  const auth = getDriveAuth();
+  return google.sheets({ version: "v4", auth });
+}
+
+export function getDriveAuth() {
+  console.log("[DEBUG] getDriveAuth - GOOGLE_REFRESH_TOKEN present:", !!GOOGLE_REFRESH_TOKEN);
+  // Try OAuth2 First (Refesh Token)
+  if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REFRESH_TOKEN) {
+    console.log("[DEBUG] getDriveAuth - Using OAuth2");
+    const oauth2Client = new google.auth.OAuth2(
+      GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET
+    );
+    oauth2Client.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
+    return oauth2Client;
+  }
+
+  console.log("[DEBUG] getDriveAuth - Falling back to Service Account");
+  // Fallback to JWT (Service Account)
   const rawEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const rawKey = process.env.GOOGLE_PRIVATE_KEY;
 
   const email = cleanEnv(rawEmail);
   let key = cleanEnv(rawKey);
 
-  console.log(`[DEBUG] Auth Attempt - Email length: ${email.length}, SheetID: ${SHEET_ID}`);
+  if (!email || !key) {
+    throw new Error("Missing auth env: Need OAuth2 (GOOGLE_REFRESH_TOKEN) OR Service Account (GOOGLE_SERVICE_ACCOUNT_EMAIL)");
+  }
 
-  if (!SHEET_ID) throw new Error("Missing env: SHEET_ID");
-  if (!email || !key) throw new Error("Missing env: GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY");
-
-  // Handle literal newlines and escaped \n
   key = key.replace(/\\n/g, "\n");
 
-  const auth = new google.auth.JWT({
+  return new google.auth.JWT({
     email,
     key,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    scopes: [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive"
+    ],
   });
-
-  return google.sheets({ version: "v4", auth });
 }
 
 export async function getHeaders(sheets, sheetName) {

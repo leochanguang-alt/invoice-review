@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,40 +10,184 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <aside>
-        <div class="logo">
-            BUI Service<br>Expense
-        </div>
-        <nav>
-            <button class="nav-item active" data-page="summary">Expense Summary</button>
-            <button class="nav-item" data-page="invoice">Review Invoice</button>
-            <button class="nav-item" data-page="reconciliation">Finance Reconciliation</button>
-            <button class="nav-item" data-page="settings">Account Setting</button>
-        </nav>
-    </aside>
 
-    <main>
-        <header>
-            <h1 id="page-title">Expense Summary</h1>
-        </header>
-        <div id="content-area">
-            <!-- Dynamic content goes here -->
-            <div class="card">
-                <table id="data-table">
-                    <thead>
-                        <tr id="table-header">
-                            <!-- Headers will be injected here -->
-                        </tr>
-                    </thead>
-                    <tbody id="table-body">
-                        <!-- Data rows will be injected here -->
-                    </tbody>
-                </table>
+<body>
+    <!-- Login Modal (HIDDEN) -->
+    <div id="login-modal" class="modal" style="display: none !important;">
+        <div class="modal-content">
+            <h2>Access Required</h2>
+            <form id="login-form">
+                <input type="password" id="password-input" placeholder="Enter Admin Password" required />
+                <button type="submit">Login</button>
+            </form>
+            <p id="login-error" style="color: red; display: none;">Invalid Password</p>
+        </div>
+    </div>
+
+    <!-- Main App (VISIBLE BY DEFAULT) -->
+    <div class="container" id="main-app" style="display: flex !important;">
+        <div class="sidebar">
+            <div class="logo">Invoice Review</div>
+            <div class="nav-item active" data-page="summary">Summary</div>
+            <div class="nav-item" data-page="invoice">Review Invoice</div>
+            <div class="nav-item" data-page="reconciliation">Reconciliation</div>
+            <div class="nav-item" data-page="settings">Settings</div>
+            <div style="margin-top: auto; padding: 20px;">
+                <button id="logout-btn"
+                    style="width: 100%; padding: 10px; background: #666; border: none; color: white; cursor: pointer;">Logout</button>
             </div>
         </div>
-    </main>
+        <div class="main-content">
+            <h1 id="page-title">Expense Summary</h1>
+            <div id="content-area">
+                <div class="card">
+                    <table id="data-table">
+                        <thead>
+                            <tr id="table-header">
+                                <!-- Headers -->
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <!-- Rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Settings Page -->
+            <div id="settings-area" style="display: none;">
+                <div class="settings-cards">
+                    <div class="settings-card" data-sheet="company">
+                        <h3>公司信息管理</h3>
+                        <p>Company_info 表</p>
+                    </div>
+                    <div class="settings-card" data-sheet="projects">
+                        <h3>项目管理</h3>
+                        <p>Projects 表</p>
+                    </div>
+                    <div class="settings-card" data-sheet="owner">
+                        <h3>个人账户管理</h3>
+                        <p>Invoice_Owner 表</p>
+                    </div>
+                </div>
+
+                <!-- Management Table View -->
+                <div id="manage-view" style="display: none;">
+                    <div class="manage-header">
+                        <button id="back-to-settings" class="btn-secondary">← 返回</button>
+                        <h2 id="manage-title"></h2>
+                        <button id="add-row-btn" class="btn-primary">+ 添加</button>
+                    </div>
+                    <div class="card">
+                        <table id="manage-table">
+                            <thead>
+                                <tr id="manage-header"></tr>
+                            </thead>
+                            <tbody id="manage-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Invoice Review Page -->
+            <div id="invoice-review-area" style="display: none;">
+                <!-- Tabs -->
+                <div class="review-tabs">
+                    <button class="review-tab active" data-tab="review">Review</button>
+                    <button class="review-tab" data-tab="modify">Modify</button>
+                    <button class="review-tab" data-tab="submit">Submit</button>
+                </div>
+
+                <!-- Split Layout -->
+                <div class="review-split-layout">
+                    <!-- Left: Records Table -->
+                    <div class="review-left-panel">
+                    <div class="review-records-header">
+                            <h3>Invoice Records</h3>
+                            <span id="review-record-count">0 records</span>
+                        </div>
+                        <div id="submit-actions" style="display: none; margin-bottom: 1rem;">
+                            <button id="submit-selected-btn" class="btn-primary" onclick="submitSelectedRecords()">Submit Selected Records</button>
+                        </div>
+                        <div class="review-table-container">
+                            <table class="review-table" id="review-table">
+                                <thead>
+                                    <tr id="review-table-header">
+                                        <!-- Headers will be rendered here -->
+                                    </tr>
+                                </thead>
+                                <tbody id="review-table-body">
+                                    <!-- Rows will be rendered here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Right: Detail Panel -->
+                    <div class="review-right-panel">
+                        <!-- Top: Detail Form -->
+                        <div class="review-detail-form" id="review-detail-form">
+                            <h3>Invoice Details</h3>
+                            <p style="color: #888;">Select a record from the left to view details</p>
+                        </div>
+
+                        <!-- Bottom: Attachment Preview -->
+                        <div class="review-attachment-preview" id="review-attachment-preview">
+                            <h3>Attachment Preview</h3>
+                            <div id="attachment-container">
+                                <p style="color: #888;">No attachment available</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Confirm Modal -->
+            <div id="confirm-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="width: 400px;">
+                    <h2>Do you confirm these invoices?</h2>
+                    <p id="confirm-modal-message" style="margin: 20px 0; color: #ccc;"></p>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="confirm-yes" class="btn-primary" style="flex:1;">Yes</button>
+                        <button id="confirm-no" class="btn-secondary" style="flex:1;">No</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Modal -->
+            <div id="progress-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="width: 450px;">
+                    <h2 id="progress-title">Submitting Records...</h2>
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progress-current">0</span> / <span id="progress-total">0</span> records
+                        </div>
+                    </div>
+                    <div id="progress-status" class="progress-status">Initializing...</div>
+                    <div id="progress-details" class="progress-details"></div>
+                </div>
+            </div>
+
+            <!-- Edit Modal -->
+            <div id="edit-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="width: 400px;">
+                    <h2 id="edit-modal-title">编辑</h2>
+                    <form id="edit-form">
+                        <div id="edit-fields"></div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" class="btn-primary" style="flex:1;">保存</button>
+                            <button type="button" id="cancel-edit" class="btn-secondary" style="flex:1;">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>
+
 </html>

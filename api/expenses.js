@@ -37,7 +37,10 @@ export default async function handler(req, res) {
                 "Charge to Company": ["Charge to Company"],
                 "Charge to Project": ["Charge to Project"],
                 "Owner": ["Owner"],
-                "Invoice ID": ["Invoice_ID", "Invoice ID", "invoice_number"]
+                "Invoice ID": ["Invoice_ID", "Invoice ID", "invoice_number"],
+                "file_link": ["file_link", "Attachment", "Link"],
+                "Location(City)": ["Location(City)", "Location"],
+                "Drive_ID": [", OvC", "File_ID", "ID", "file_id", "Drive_ID"]
             };
 
             // For each display column, try to find a matching header
@@ -52,6 +55,9 @@ export default async function handler(req, res) {
                 }
                 item[displayName] = value;
             }
+
+            // Include original row number for updates
+            item._rowNumber = i + 1;
 
             // Only add if there is at least some data
             if (Object.values(item).some(v => v !== "")) {

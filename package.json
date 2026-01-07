@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "repository": {
     "type": "git",
@@ -13,13 +14,18 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/leochanguang-alt/invoice-review/issues"
   },
   "homepage": "https://github.com/leochanguang-alt/invoice-review#readme",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.90.0",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
-    "googleapis": "^169.0.0"
+    "express": "^5.2.1",
+    "googleapis": "^169.0.0",
+    "jsonwebtoken": "^9.0.3"
   }
 }
