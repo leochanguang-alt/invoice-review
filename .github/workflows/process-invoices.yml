@@ -1,4 +1,4 @@
-name: Automated Invoice Processing
+name: Auto Invoice Cloud Watcher
 
 on:
   schedule:
