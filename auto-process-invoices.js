@@ -1,12 +1,12 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
-import { getDriveAuth, json } from './api/_sheets.js';
+import { getDriveAuth, json, getSheetsClient, SHEET_ID, norm } from './api/_sheets.js';
 import { supabase } from './api/_supabase.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Readable } from 'stream';
 
 const FOLDER_ID = '1-SfI4cPugsqOuMzgtBPwv9Ca3JVGSlc3';
-const GENAI_MODEL = 'gemini-1.5-flash';
+const GENAI_MODEL = 'gemini-3-flash-preview';
 
 async function processInvoices() {
     console.log('--- Starting Local Invoice Processing ---');
@@ -100,30 +100,74 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
                     jsonStr = jsonMatch[0];
                 }
 
-                const invoiceData = JSON.parse(jsonStr);
+                let invoiceData;
+                try {
+                    invoiceData = JSON.parse(jsonStr);
+                } catch (parseErr) {
+                    console.error('Failed to parse Gemini JSON. Raw text:', responseText);
+                    throw new Error('Gemini response was not valid JSON');
+                }
+
+                // Normalizing field names (case-insensitive and handling potential variations)
+                const getVal = (obj, keys) => {
+                    for (const k of keys) {
+                        if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+                    }
+                    return null;
+                };
+
+                const rawDate = getVal(invoiceData, ['date', 'invoice_date']);
+                const rawVendor = getVal(invoiceData, ['vendor_name', 'vendor']);
+                const rawAmount = getVal(invoiceData, ['total_amount', 'amount']);
+                const rawCurrency = getVal(invoiceData, ['currency']);
+                const rawInvoiceNum = getVal(invoiceData, ['invoice_number', 'invoice_no']);
+                const rawCity = getVal(invoiceData, ['city', 'City', 'location_city']);
+                const rawCountry = getVal(invoiceData, ['country', 'Country']);
+                const rawCategory = getVal(invoiceData, ['category']);
+
+                // Data Cleaning
+                const cleanAmount = (val) => {
+                    if (typeof val === 'number') return val;
+                    if (!val) return 0;
+                    // Remove currency symbols, commas, and spaces
+                    const cleaned = val.toString().replace(/[^\d.-]/g, '');
+                    return parseFloat(cleaned) || 0;
+                };
+
+                const cleanString = (val) => (val || '').toString().trim();
+
+                const processedData = {
+                    file_id: file.id,
+                    invoice_date: cleanString(rawDate),
+                    vendor: cleanString(rawVendor),
+                    amount: cleanAmount(rawAmount),
+                    currency: cleanString(rawCurrency),
+                    invoice_number: cleanString(rawInvoiceNum),
+                    location_city: cleanString(rawCity),
+                    country: cleanString(rawCountry),
+                    category: cleanString(rawCategory),
+                    file_link: file.webViewLink,
+                    status: 'Waiting for Confirm'
+                };
+
+                console.log('Processed Data:', JSON.stringify(processedData, null, 2));
 
                 // 5. Insert into Supabase
                 console.log('Inserting into Supabase...');
-                const { error: insertError } = await supabase
+                const { data: insertResult, error: insertError } = await supabase
                     .from('invoices')
-                    .insert([{
-                        file_id: file.id,
-                        invoice_date: invoiceData.date,
-                        vendor: invoiceData.vendor_name,
-                        amount: parseFloat(invoiceData.total_amount),
-                        currency: invoiceData.currency,
-                        invoice_number: invoiceData.invoice_number,
-                        location_city: invoiceData.City,
-                        country: invoiceData.Country,
-                        category: invoiceData.category,
-                        file_link: file.webViewLink,
-                        status: 'Waiting for Confirm'
-                    }]);
+                    .insert([processedData])
+                    .select();
 
                 if (insertError) {
-                    console.error('Error inserting into Supabase:', insertError.message);
+                    console.error('Error inserting into Supabase:', {
+                        message: insertError.message,
+                        details: insertError.details,
+                        hint: insertError.hint,
+                        code: insertError.code
+                    });
                 } else {
-                    console.log('Successfully processed and saved to Supabase.');
+                    console.log('✅ Successfully saved to Supabase. ID:', insertResult?.[0]?.id);
                 }
             } catch (fileErr) {
                 console.error(`Error processing file ${file.name}:`, fileErr.message || fileErr);
@@ -137,7 +181,7 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
     console.log('\n--- Processing Finished ---');
 }
 
-const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const POLL_INTERVAL = 1 * 60 * 1000; // 1 minute
 
 async function run() {
     const isWatchMode = process.argv.includes('--watch');
