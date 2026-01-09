@@ -9,6 +9,9 @@ const FOLDER_ID = '1-SfI4cPugsqOuMzgtBPwv9Ca3JVGSlc3';
 const GENAI_MODEL = 'gemini-3-flash-preview';
 
 async function processInvoices() {
+    console.log('--- Invoice Processing is TEMPORARILY DISABLED ---');
+    return; // Disconnected by user requirement to prevent Supabase changes during testing
+
     console.log('--- Starting Local Invoice Processing ---');
 
     if (!process.env.GEMINI_API_KEY) {
