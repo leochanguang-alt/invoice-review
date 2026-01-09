@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import crypto from 'crypto';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { supabase } from './api/_supabase.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -196,9 +197,11 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
 
                 const cleanString = (val) => (val || '').toString().trim();
 
-                // Use R2 key as file_id and construct R2 URL for file_link
+                // Generate hash ID from R2 key for brevity
+                const fileHash = crypto.createHash('md5').update(file.key).digest('hex').substring(0, 12);
+
                 const processedData = {
-                    file_id: file.key,  // R2 object key
+                    file_id: fileHash,  // 12-char MD5 hash of R2 key
                     invoice_date: cleanString(rawDate),
                     vendor: cleanString(rawVendor),
                     amount: cleanAmount(rawAmount),
