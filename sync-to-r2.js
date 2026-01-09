@@ -29,31 +29,25 @@ async function syncFolderToR2(folderId, r2Prefix) {
         });
 
         for (const file of res.data.files) {
-            let nextR2Prefix;
+            const nextR2Prefix = `${r2Prefix}/${file.name}`;
 
-            // Special Mapping Logic for Root Folders
-            if (r2Prefix === "bui_invoice/original_files") {
-                if (file.name === "Test_invoice") {
-                    nextR2Prefix = `${r2Prefix}/fr_google_drive`;
-                } else {
-                    nextR2Prefix = `${r2Prefix}/${file.name}`;
+            if (file.mimeType.startsWith('application/vnd.google-apps.')) {
+                if (file.mimeType === "application/vnd.google-apps.folder") {
+                    // Recurse into subfolders
+                    await syncFolderToR2(file.id, nextR2Prefix);
                 }
+                // Skip Google Docs, Sheets, etc. (non-downloadable)
             } else {
-                nextR2Prefix = `${r2Prefix}/${file.name}`;
-            }
-
-            if (file.mimeType === "application/vnd.google-apps.folder") {
-                await syncFolderToR2(file.id, nextR2Prefix);
-            } else {
-                const r2Key = nextR2Prefix; // For files, nextR2Prefix is the full key
+                const r2Key = nextR2Prefix;
 
                 try {
-                    // 1. Check if exists (Incremental Sync)
+                    // Check if file already exists in R2
                     try {
                         await r2.send(new HeadObjectCommand({
                             Bucket: BUCKET_NAME,
                             Key: r2Key,
                         }));
+                        // File exists, skip
                         console.log(`Skipping existing: ${r2Key}`);
                         continue;
                     } catch (err) {
@@ -90,13 +84,14 @@ async function syncFolderToR2(folderId, r2Prefix) {
     } while (pageToken);
 }
 
-const DRIVE_FOLDER_ID = "14cHbyYH-wZSHfFHS-5aY-x7zw2bip2lD";
-const R2_ROOT_PREFIX = "bui_invoice/original_files";
+// ONLY sync Test_invoice folder (inside n8n_Test) to fr_google_drive
+// Google Drive: n8n_Test/Test_invoice -> R2: bui_invoice/original_files/fr_google_drive
+const TEST_INVOICE_FOLDER_ID = "1-SfI4cPugsqOuMzgtBPwv9Ca3JVGSlc3";
+const R2_TARGET_PREFIX = "bui_invoice/original_files/fr_google_drive";
 
-console.log(`Starting automated sync...`);
-console.log(`Drive Root: ${DRIVE_FOLDER_ID}`);
-console.log(`R2 Root: ${BUCKET_NAME}/${R2_ROOT_PREFIX}`);
+console.log(`Starting sync: Google Drive Test_invoice -> R2 ${R2_TARGET_PREFIX}`);
+console.log(`Drive Folder ID: ${TEST_INVOICE_FOLDER_ID}`);
 
-syncFolderToR2(DRIVE_FOLDER_ID, R2_ROOT_PREFIX)
+syncFolderToR2(TEST_INVOICE_FOLDER_ID, R2_TARGET_PREFIX)
     .then(() => console.log("Sync complete!"))
     .catch((err) => console.error("Sync failed:", err));
