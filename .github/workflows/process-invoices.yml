@@ -1,6 +1,8 @@
 name: Auto Invoice Cloud Watcher
 
 on:
+  push:
+    branches: [ main ]
   schedule:
     - cron: '*/15 * * * *' # Every 15 minutes
   workflow_dispatch:      # Allow manual trigger
