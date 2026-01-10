@@ -111,7 +111,8 @@ async function processInvoices() {
                         name: filename,
                         mimeType: getMimeType(filename),
                         size: obj.Size,
-                        lastModified: obj.LastModified
+                        lastModified: obj.LastModified,
+                        etag: obj.ETag?.replace(/"/g, '') // Extract ETag
                     });
                 }
             }
@@ -127,12 +128,15 @@ async function processInvoices() {
             // Generate hash ID from R2 key for consistency
             const fileHash = crypto.createHash('md5').update(file.key).digest('hex').substring(0, 12);
 
-            // 2. Check if already processed in Supabase (using hash as file_id)
-            const { data: existing, error: checkError } = await supabase
+            // 2. Check if already processed in Supabase (check BOTH file_id hash AND ETag hash)
+            // This prevents reprocessing legacy records that have Google Drive IDs
+            let query = supabase
                 .from('invoices')
                 .select('id')
-                .eq('file_id', fileHash)
+                .or(`file_id.eq.${fileHash},file_ID_HASH.eq.${file.etag}`)
                 .maybeSingle();
+
+            const { data: existing, error: checkError } = await query;
 
             if (checkError) {
                 console.error(`Error checking Supabase for ${fileHash}:`, checkError.message);
@@ -140,7 +144,7 @@ async function processInvoices() {
             }
 
             if (existing) {
-                console.log(`File already processed (hash: ${fileHash}). Skipping.`);
+                console.log(`File already processed (hash: ${fileHash}, etag: ${file.etag}). Skipping.`);
                 continue;
             }
 
