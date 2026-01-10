@@ -86,6 +86,12 @@ export default async function handler(req, res) {
 
         res.statusCode = 500;
         res.setHeader("Content-Type", "application/json");
-        return res.end(JSON.stringify({ error: err.message }));
+        return res.end(JSON.stringify({
+            error: err.message,
+            name: err.name,
+            code: err.code,
+            stack: err.stack,
+            metadata: err.$metadata
+        }));
     }
 }
