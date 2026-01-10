@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { supabase } from './api/_supabase.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -17,11 +19,20 @@ const r2 = new S3Client({
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PREFIX = 'bui_invoice/original_files/fr_google_drive/';
 const GENAI_MODEL = 'gemini-2.0-flash';
+const LOG_FILE = path.join(process.cwd(), 'sync-log.txt');
 
 // Construct public R2 URL (adjust based on your R2 bucket configuration)
 // If using custom domain: https://your-domain.com/
 // If using R2.dev: https://pub-xxx.r2.dev/
 const R2_PUBLIC_URL_BASE = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com/`;
+
+// Log function to write to sync-log.txt
+function writeLog(message) {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${message}\n`;
+    fs.appendFileSync(LOG_FILE, logEntry);
+    console.log(logEntry.trim());
+}
 
 async function streamToBuffer(stream) {
     const chunks = [];
@@ -44,8 +55,18 @@ function getMimeType(filename) {
     return mimeTypes[ext] || 'application/octet-stream';
 }
 
+// Get current record count from Supabase
+async function getRecordCount() {
+    const { count } = await supabase.from('invoices').select('*', { count: 'exact', head: true });
+    return count || 0;
+}
+
 async function processInvoices() {
     console.log('--- Starting R2-Based Invoice Processing ---');
+
+    // Record count before processing
+    const countBefore = await getRecordCount();
+    writeLog(`=== Sync Started === Records before: ${countBefore}`);
 
     if (!process.env.GEMINI_API_KEY) {
         console.error('Error: GEMINI_API_KEY is missing in environment variables.');
@@ -230,8 +251,10 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
                         hint: insertError.hint,
                         code: insertError.code
                     });
+                    writeLog(`INSERT ERROR: ${file.name} - ${insertError.message}`);
                 } else {
                     console.log('✅ Successfully saved to Supabase. ID:', insertResult?.[0]?.id);
+                    writeLog(`NEW RECORD: ID=${insertResult?.[0]?.id} | File=${file.name} | Vendor=${processedData.vendor} | Amount=${processedData.amount} ${processedData.currency}`);
                 }
             } catch (fileErr) {
                 console.error(`Error processing file ${file.name}:`, fileErr.message || fileErr);
@@ -240,6 +263,17 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
 
     } catch (err) {
         console.error('An unexpected error occurred during scan:', err);
+        writeLog(`ERROR: ${err.message}`);
+    }
+
+    // Record count after processing
+    const countAfter = await getRecordCount();
+    const newRecords = countAfter - countBefore;
+
+    writeLog(`=== Sync Finished === Records after: ${countAfter} | New records added: ${newRecords}`);
+
+    if (newRecords > 0) {
+        writeLog(`WARNING: ${newRecords} new records were added during this sync!`);
     }
 
     console.log('\n--- Processing Finished ---');
