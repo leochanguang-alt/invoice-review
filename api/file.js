@@ -10,7 +10,7 @@ const r2 = new S3Client({
     forcePathStyle: false,
 });
 
-const BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const BUCKET_NAME = process.env.R2_BUCKET_NAME || "buiservice-assets";
 
 export default async function handler(req, res) {
     console.log("File Proxy Request:", req.query);
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
         endpoint: !!process.env.R2_ENDPOINT,
         key: !!process.env.R2_ACCESS_KEY_ID,
         secret: !!process.env.R2_SECRET_ACCESS_KEY,
-        bucket: !!process.env.R2_BUCKET_NAME,
+        bucket: !!BUCKET_NAME,
         bucket_val: BUCKET_NAME
     });
     // Get file path from query
@@ -102,10 +102,10 @@ export default async function handler(req, res) {
             metadata: err.$metadata,
             env_check: {
                 endpoint: !!process.env.R2_ENDPOINT,
-                bucket: !!process.env.R2_BUCKET_NAME,
-                bucket_name: process.env.R2_BUCKET_NAME,
+                bucket: !!BUCKET_NAME,
+                bucket_name: BUCKET_NAME,
                 region: "auto",
-                forcePathStyle: true
+                forcePathStyle: false
             }
         }));
     }
