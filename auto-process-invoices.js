@@ -124,20 +124,23 @@ async function processInvoices() {
         for (const file of allFiles) {
             console.log(`\nProcessing file: ${file.name} (${file.key})`);
 
-            // 2. Check if already processed in Supabase (using R2 key as file_id)
+            // Generate hash ID from R2 key for consistency
+            const fileHash = crypto.createHash('md5').update(file.key).digest('hex').substring(0, 12);
+
+            // 2. Check if already processed in Supabase (using hash as file_id)
             const { data: existing, error: checkError } = await supabase
                 .from('invoices')
                 .select('id')
-                .eq('file_id', file.key)
+                .eq('file_id', fileHash)
                 .maybeSingle();
 
             if (checkError) {
-                console.error(`Error checking Supabase for ${file.key}:`, checkError.message);
+                console.error(`Error checking Supabase for ${fileHash}:`, checkError.message);
                 continue;
             }
 
             if (existing) {
-                console.log(`File already processed. Skipping.`);
+                console.log(`File already processed (hash: ${fileHash}). Skipping.`);
                 continue;
             }
 
@@ -217,9 +220,6 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
                 };
 
                 const cleanString = (val) => (val || '').toString().trim();
-
-                // Generate hash ID from R2 key for brevity
-                const fileHash = crypto.createHash('md5').update(file.key).digest('hex').substring(0, 12);
 
                 const processedData = {
                     file_id: fileHash,  // 12-char MD5 hash of R2 key
