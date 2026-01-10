@@ -7,12 +7,20 @@ const r2 = new S3Client({
         accessKeyId: process.env.R2_ACCESS_KEY_ID,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     },
+    forcePathStyle: true,
 });
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
-const R2_BASE_URL = `https://${BUCKET_NAME}.r2.cloudflarestorage.com/`;
 
 export default async function handler(req, res) {
+    console.log("File Proxy Request:", req.query);
+    console.log("Env Check:", {
+        endpoint: !!process.env.R2_ENDPOINT,
+        key: !!process.env.R2_ACCESS_KEY_ID,
+        secret: !!process.env.R2_SECRET_ACCESS_KEY,
+        bucket: !!process.env.R2_BUCKET_NAME,
+        bucket_val: BUCKET_NAME
+    });
     // Get file path from query
     const filePath = req.query.path;
     const fileLink = req.query.link; // Full R2 URL from file_link field
