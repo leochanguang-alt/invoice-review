@@ -1,7 +1,26 @@
-import { getSheetsClient, SHEET_ID, MAIN_SHEET, norm, json, toA1Column, buildHeaderIndex, getDriveAuth } from "./_sheets.js";
-import { google } from "googleapis";
+import { supabase } from "./_supabase.js";
+import { S3Client, CopyObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 
-const ARCHIVE_PARENT_ID = '1FreZ79xZvK3S1_Zlg4oyaep0-1tkXwF8';
+// R2 Configuration
+const r2 = new S3Client({
+    region: "auto",
+    endpoint: process.env.R2_ENDPOINT,
+    credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
+});
+
+const BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || '';
+const R2_ORIGINAL_PREFIX = 'bui_invoice/original_files/fr_google_drive';
+const R2_PROJECTS_PREFIX = 'bui_invoice/projects';
+
+function json(res, status, body) {
+    res.statusCode = status;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify(body));
+}
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -9,7 +28,10 @@ export default async function handler(req, res) {
     }
 
     try {
-        const sheets = getSheetsClient();
+        if (!supabase) {
+            return json(res, 500, { success: false, message: 'Supabase client not initialized' });
+        }
+
         const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const { records } = body;
 
@@ -19,58 +41,16 @@ export default async function handler(req, res) {
             return json(res, 400, { success: false, message: 'No records provided' });
         }
 
-        const driveAuth = getDriveAuth();
-        const drive = google.drive({ version: 'v3', auth: driveAuth });
+        // Load projects from Supabase
+        const { data: projects, error: projectsErr } = await supabase
+            .from('projects')
+            .select('project_code, project_name');
 
-        // Get headers to find column indexes
-        const mainHeadersRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: SHEET_ID,
-            range: `${MAIN_SHEET}!1:1`,
-            valueRenderOption: "FORMATTED_VALUE",
-        });
-        const headers = (mainHeadersRes.data.values?.[0] || []).map(norm);
-        const headerMap = buildHeaderIndex(headers);
-        console.log("[SUBMIT] Headers:", JSON.stringify(headers));
-
-        // Find column indexes
-        const statusColIdx = headerMap.get('Status');
-        const invoiceIdColIdx = headerMap.get('Invoice_ID') ?? headerMap.get('Invoice ID') ?? headerMap.get('invoice_id');
-        const achiveLinkColIdx = headerMap.get('Achieved_File_link') ?? headerMap.get('Achieved_File_Link');
-        const achiveIdColIdx = headerMap.get('Achieved_File_ID');
-
-        console.log("[SUBMIT] Indices:", { statusColIdx, invoiceIdColIdx, achiveLinkColIdx, achiveIdColIdx });
-
-        if (statusColIdx === undefined) {
-            console.error("[SUBMIT] Status column missing.");
-            return json(res, 400, { success: false, message: 'Status column not found' });
+        if (projectsErr) {
+            console.error("[SUBMIT] Failed to load projects:", projectsErr.message);
         }
 
-        // 1. Load Projects mapping
-        const projectsRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: SHEET_ID,
-            range: `Projects!A:Z`,
-            valueRenderOption: "FORMATTED_VALUE",
-        });
-        const projectsValues = projectsRes.data.values || [];
-        const projectsHeaders = (projectsValues[0] || []).map(norm);
-        const projectsHeaderMap = buildHeaderIndex(projectsHeaders);
-        const pCodeIdx = projectsHeaderMap.get('Project Code') ?? projectsHeaderMap.get('ProjectCode');
-        const pLinkIdx = projectsHeaderMap.get('Drive_Folder_Link') ?? projectsHeaderMap.get('Drive Folder Link');
-
-        const projectFolderMap = {};
-        for (let i = 1; i < projectsValues.length; i++) {
-            const row = projectsValues[i];
-            const pCode = norm(row[pCodeIdx]);
-            const pLink = norm(row[pLinkIdx]);
-            if (pCode && pLink) {
-                // Extract ID from URL: https://drive.google.com/drive/folders/ID
-                const match = pLink.match(/folders\/([a-zA-Z0-9_-]+)/);
-                if (match) {
-                    projectFolderMap[pCode] = match[1];
-                }
-            }
-        }
-        console.log("[SUBMIT] Project Folder Map loaded for codes:", Object.keys(projectFolderMap));
+        const validProjectCodes = new Set((projects || []).map(p => p.project_code));
 
         // Group records by project to generate sequence numbers
         const projectGroups = {};
@@ -82,17 +62,19 @@ export default async function handler(req, res) {
             projectGroups[key].push(record);
         }
 
-        // Get existing Invoice_IDs to determine next sequence for each project
-        let existingInvoiceIds = [];
-        if (invoiceIdColIdx !== undefined) {
-            const col = toA1Column(invoiceIdColIdx + 1);
-            const invoiceIdRes = await sheets.spreadsheets.values.get({
-                spreadsheetId: SHEET_ID,
-                range: `${MAIN_SHEET}!${col}2:${col}`,
-                valueRenderOption: "FORMATTED_VALUE",
-            });
-            existingInvoiceIds = (invoiceIdRes.data.values || []).map(row => norm(row[0] || ''));
+        // Get existing Invoice_IDs from Supabase to determine next sequence for each project
+        const { data: existingInvoices, error: invErr } = await supabase
+            .from('invoices')
+            .select('generated_invoice_id')
+            .not('generated_invoice_id', 'is', null);
+
+        if (invErr) {
+            console.error("[SUBMIT] Failed to load existing invoices:", invErr.message);
         }
+
+        const existingInvoiceIds = (existingInvoices || [])
+            .map(inv => inv.generated_invoice_id || '')
+            .filter(id => id);
 
         // Calculate next sequence number for each project
         const projectSequences = {};
@@ -104,8 +86,7 @@ export default async function handler(req, res) {
                     const remaining = invoiceId.substring(projectCode.length + 1);
                     const parts = remaining.split('-');
                     if (parts.length >= 1) {
-                        const seqPart = parts[0];
-                        const seqNum = parseInt(seqPart);
+                        const seqNum = parseInt(parts[0]);
                         if (!isNaN(seqNum) && seqNum > maxSeq) {
                             maxSeq = seqNum;
                         }
@@ -116,119 +97,155 @@ export default async function handler(req, res) {
             console.log(`[SUBMIT] Project ${projectCode} max sequence: ${maxSeq}`);
         }
 
-        // Prepare batch update data
-        const updates = [];
+        const results = [];
 
         for (const record of records) {
-            const { rowNumber, companyId, projectCode, amount, currency, fileId } = record;
-            console.log(`[SUBMIT] Record row ${rowNumber}, fileId: "${fileId}", project: "${projectCode}"`);
+            const { rowNumber, projectCode, amount, currency, fileId } = record;
+            const recordId = rowNumber; // rowNumber is actually Supabase id
+            console.log(`[SUBMIT] Processing record ${recordId}, fileId: "${fileId}", project: "${projectCode}"`);
 
             // Generate Invoice_ID
             const seq = ++projectSequences[projectCode || 'UNKNOWN'];
             const seqStr = seq.toString().padStart(4, '0');
-            const amountNum = Math.round(parseFloat(amount.replace(/,/g, '')) || 0);
-            const invoiceId = `${projectCode}-${seqStr}-${amountNum}${currency}`;
+            const amountStr = amount ? amount.toString().replace(/,/g, '') : '0';
+            const amountNum = Math.round(parseFloat(amountStr) || 0);
 
-            // 1. File Archiving
+            // Handle negative amounts with 'm' prefix
+            const amountPart = amountNum < 0 ? `m${Math.abs(amountNum)}` : String(amountNum);
+            const invoiceId = `${projectCode}-${seqStr}-${amountPart}${currency}`;
+
+            // File Archiving to R2
             let archivedLink = "";
-            let archivedId = "";
+            let archivedFileId = "";
+
             if (fileId && fileId.trim() !== "") {
                 try {
-                    let folderId = projectFolderMap[projectCode];
+                    // Determine file extension from fileId (which could be filename or R2 key)
+                    let originalKey = "";
+                    let fileExtension = ".pdf"; // default
 
-                    if (!folderId) {
-                        console.warn(`[SUBMIT] No folder ID in map for project: ${projectCode}. Falling back to search.`);
-                        const listRes = await drive.files.list({
-                            q: `name = '${projectCode.replace(/'/g, "\\'")}' and '${ARCHIVE_PARENT_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-                            fields: 'files(id)',
-                            supportsAllDrives: true,
-                            includeItemsFromAllDrives: true
-                        });
-                        if (listRes.data.files?.length > 0) {
-                            folderId = listRes.data.files[0].id;
+                    // Check if fileId is already an R2 key path
+                    if (fileId.includes('/')) {
+                        originalKey = fileId;
+                        const parts = fileId.split('.');
+                        if (parts.length > 1) {
+                            fileExtension = '.' + parts[parts.length - 1];
+                        }
+                    } else {
+                        // fileId is a Google Drive ID - we need to find the file in R2
+                        // Try to find a matching file by searching for files containing this ID
+                        // For now, assume it might be the filename or partial key
+                        console.log(`[SUBMIT] Looking for file with ID: ${fileId}`);
+
+                        // Try common patterns - the file might be in fr_google_drive
+                        // We'll need to check if the file exists
+                        const possibleExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+                        for (const ext of possibleExtensions) {
+                            const testKey = `${R2_ORIGINAL_PREFIX}/${fileId}${ext}`;
+                            try {
+                                await r2.send(new HeadObjectCommand({
+                                    Bucket: BUCKET_NAME,
+                                    Key: testKey
+                                }));
+                                originalKey = testKey;
+                                fileExtension = ext;
+                                console.log(`[SUBMIT] Found file at: ${testKey}`);
+                                break;
+                            } catch (e) {
+                                // File not found with this extension, continue
+                            }
+                        }
+
+                        // If still not found, try to get file link from Supabase record
+                        if (!originalKey) {
+                            const { data: recordData } = await supabase
+                                .from('invoices')
+                                .select('file_link, file_id')
+                                .eq('id', recordId)
+                                .single();
+
+                            if (recordData?.file_link) {
+                                // Extract path from R2 URL
+                                const urlMatch = recordData.file_link.match(/bui_invoice\/.*$/);
+                                if (urlMatch) {
+                                    originalKey = urlMatch[0];
+                                    const parts = originalKey.split('.');
+                                    if (parts.length > 1) {
+                                        fileExtension = '.' + parts[parts.length - 1];
+                                    }
+                                    console.log(`[SUBMIT] Found original key from file_link: ${originalKey}`);
+                                }
+                            }
                         }
                     }
 
-                    if (folderId) {
-                        console.log(`[SUBMIT] Copying ${fileId} -> ${folderId} as ${invoiceId}`);
-                        const copyRes = await drive.files.copy({
-                            fileId: fileId,
-                            requestBody: {
-                                name: invoiceId, // Rename to Invoice_ID
-                                parents: [folderId]
-                            },
-                            fields: 'id, webViewLink',
-                            supportsAllDrives: true
-                        });
-                        archivedId = copyRes.data.id;
-                        archivedLink = copyRes.data.webViewLink;
-                        console.log(`[SUBMIT] Archived OK: ${archivedId}`);
+                    if (originalKey) {
+                        // Copy file to project folder with new name
+                        const targetKey = `${R2_PROJECTS_PREFIX}/${projectCode}/${invoiceId}${fileExtension}`;
+
+                        console.log(`[SUBMIT] Copying ${originalKey} -> ${targetKey}`);
+
+                        await r2.send(new CopyObjectCommand({
+                            Bucket: BUCKET_NAME,
+                            CopySource: `${BUCKET_NAME}/${originalKey}`,
+                            Key: targetKey
+                        }));
+
+                        archivedFileId = targetKey;
+                        archivedLink = `${R2_PUBLIC_URL}/${targetKey}`;
+                        console.log(`[SUBMIT] Archived OK: ${targetKey}`);
                     } else {
-                        console.error(`[SUBMIT] Could not find or create folder for project: ${projectCode}`);
+                        console.warn(`[SUBMIT] Could not locate original file for ID: ${fileId}`);
                     }
-                } catch (driveErr) {
-                    console.error(`[SUBMIT] ARCHIVE ERROR for row ${rowNumber}:`, driveErr.message);
+
+                } catch (archiveErr) {
+                    console.error(`[SUBMIT] ARCHIVE ERROR for record ${recordId}:`, archiveErr.message);
                 }
             } else {
-                console.warn(`[SUBMIT] No fileId for row ${rowNumber}`);
+                console.warn(`[SUBMIT] No fileId for record ${recordId}`);
             }
 
-            // 2. Prepare Updates
-            // Status -> Submitted
-            const statusCol = toA1Column(statusColIdx + 1);
-            updates.push({
-                range: `${MAIN_SHEET}!${statusCol}${rowNumber}`,
-                values: [['Submitted']]
-            });
+            // Update Supabase record
+            const updateData = {
+                status: 'Submitted',
+                generated_invoice_id: invoiceId,
+                updated_at: new Date().toISOString()
+            };
 
-            // Invoice_ID
-            if (invoiceIdColIdx !== undefined) {
-                const col = toA1Column(invoiceIdColIdx + 1);
-                updates.push({
-                    range: `${MAIN_SHEET}!${col}${rowNumber}`,
-                    values: [[invoiceId]]
-                });
+            if (archivedLink) {
+                updateData.archived_file_link = archivedLink;
+            }
+            if (archivedFileId) {
+                updateData.archived_file_id = archivedFileId;
             }
 
-            // Achieved_File_link
-            if (achiveLinkColIdx !== undefined && archivedLink) {
-                const col = toA1Column(achiveLinkColIdx + 1);
-                updates.push({
-                    range: `${MAIN_SHEET}!${col}${rowNumber}`,
-                    values: [[archivedLink]]
-                });
-            }
+            const { error: updateErr } = await supabase
+                .from('invoices')
+                .update(updateData)
+                .eq('id', recordId);
 
-            // Achieved_File_ID
-            if (achiveIdColIdx !== undefined && archivedId) {
-                const col = toA1Column(achiveIdColIdx + 1);
-                updates.push({
-                    range: `${MAIN_SHEET}!${col}${rowNumber}`,
-                    values: [[archivedId]]
-                });
+            if (updateErr) {
+                console.error(`[SUBMIT] Update error for record ${recordId}:`, updateErr.message);
+                results.push({ recordId, success: false, error: updateErr.message });
+            } else {
+                console.log(`[SUBMIT] Successfully submitted record ${recordId} as ${invoiceId}`);
+                results.push({ recordId, success: true, invoiceId, archivedLink });
             }
         }
 
-        console.log(`[SUBMIT] Sending batch update with ${updates.length} cell changes.`);
-        if (updates.length > 0) {
-            await sheets.spreadsheets.values.batchUpdate({
-                spreadsheetId: SHEET_ID,
-                requestBody: {
-                    valueInputOption: 'USER_ENTERED',
-                    data: updates
-                }
-            });
-            console.log("[SUBMIT] Batch update successful.");
-        }
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
 
         return json(res, 200, {
-            success: true,
-            message: `Successfully submitted and archived ${records.length} record(s)`,
-            submittedCount: records.length
+            success: failCount === 0,
+            message: `Submitted ${successCount} record(s)${failCount > 0 ? `, ${failCount} failed` : ''}`,
+            submittedCount: successCount,
+            results
         });
 
     } catch (e) {
-        console.error('Submit API Error:', e);
+        console.error('[SUBMIT] Error:', e);
         return json(res, 500, { success: false, message: e?.message || String(e) });
     }
 }

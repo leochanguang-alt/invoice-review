@@ -1241,15 +1241,15 @@ function renderAttachmentPreview(record) {
     // Clear previous
     container.innerHTML = '';
 
-    // Priority 1: Use R2 file via file_ID_HASH
-    const fileHash = record['file_ID_HASH'] || '';
-    if (fileHash) {
-        // Use our R2 file proxy API
-        const r2Url = `/api/file?id=${encodeURIComponent(fileHash)}`;
+    // Get file link (R2 URL or Google Drive link)
+    const fileLink = record['file_link'] || '';
 
-        // Check if it might be a PDF or image by checking file_link extension
-        const fileLink = record['file_link'] || '';
-        const isPdf = fileLink.toLowerCase().includes('.pdf') || fileLink.toLowerCase().includes('pdf');
+    // Priority 1: Use R2 file via file_link (contains R2 URL)
+    if (fileLink && fileLink.includes('.r2.cloudflarestorage.com')) {
+        // Use our R2 file proxy API
+        const r2Url = `/api/file?link=${encodeURIComponent(fileLink)}`;
+
+        const isPdf = fileLink.toLowerCase().includes('.pdf');
 
         if (isPdf) {
             // Use iframe for PDF
@@ -1267,6 +1267,7 @@ function renderAttachmentPreview(record) {
             container.appendChild(img);
 
             // Add zoom/pan for images
+            previewState = { scale: 1, x: 0, y: 0, isDragging: false, startX: 0, startY: 0 };
             const updateTransform = () => {
                 img.style.transform = `translate(${previewState.x}px, ${previewState.y}px) scale(${previewState.scale})`;
             };
@@ -1288,11 +1289,7 @@ function renderAttachmentPreview(record) {
         return;
     }
 
-    // Priority 3: Direct file link
-    const fileLink = record['file_link'] || record['File Link'] || record['File_Link'] ||
-        record['FileLink'] || record['Attachment'] || record['attachment'] ||
-        record['Link'] || record['link'] || record['File'] || record['file'] || '';
-
+    // Priority 3: No file available
     if (!fileLink) {
         container.innerHTML = '<p style="color: #888;">No attachment available</p>';
         return;

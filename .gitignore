@@ -14,3 +14,10 @@ debug-migration-data.js
 dump-all-headers.js
 bui-expense-management-607a0384898d.json
 .vercel
+
+# Sensitive files
+*_url.txt
+*.txt
+
+# Local data folders
+bui_invoice/
