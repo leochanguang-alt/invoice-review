@@ -1241,17 +1241,57 @@ function renderAttachmentPreview(record) {
     // Clear previous
     container.innerHTML = '';
 
-    const fileLink = record['file_link'] || record['File Link'] || record['File_Link'] ||
-        record['FileLink'] || record['Attachment'] || record['attachment'] ||
-        record['Link'] || record['link'] || record['File'] || record['file'] || '';
+    // Priority 1: Use R2 file via file_ID_HASH
+    const fileHash = record['file_ID_HASH'] || '';
+    if (fileHash) {
+        // Use our R2 file proxy API
+        const r2Url = `/api/file?id=${encodeURIComponent(fileHash)}`;
 
+        // Check if it might be a PDF or image by checking file_link extension
+        const fileLink = record['file_link'] || '';
+        const isPdf = fileLink.toLowerCase().includes('.pdf') || fileLink.toLowerCase().includes('pdf');
+
+        if (isPdf) {
+            // Use iframe for PDF
+            container.innerHTML = `<iframe src="${r2Url}" frameborder="0"></iframe>`;
+        } else {
+            // Try as image first, fallback to iframe
+            const img = document.createElement('img');
+            img.src = r2Url;
+            img.id = 'preview-img';
+            img.alt = 'Attachment';
+            img.onerror = () => {
+                // If image fails, try as iframe
+                container.innerHTML = `<iframe src="${r2Url}" frameborder="0"></iframe>`;
+            };
+            container.appendChild(img);
+
+            // Add zoom/pan for images
+            const updateTransform = () => {
+                img.style.transform = `translate(${previewState.x}px, ${previewState.y}px) scale(${previewState.scale})`;
+            };
+            container.onwheel = (e) => {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                previewState.scale = Math.max(0.5, Math.min(5, previewState.scale + delta));
+                updateTransform();
+            };
+        }
+        return;
+    }
+
+    // Priority 2: Fallback to Google Drive preview (for backwards compatibility)
     const driveId = record['Drive_ID'] || '';
-
     if (driveId) {
         const embedUrl = `https://drive.google.com/file/d/${driveId}/preview`;
         container.innerHTML = `<iframe src="${embedUrl}" frameborder="0"></iframe>`;
         return;
     }
+
+    // Priority 3: Direct file link
+    const fileLink = record['file_link'] || record['File Link'] || record['File_Link'] ||
+        record['FileLink'] || record['Attachment'] || record['attachment'] ||
+        record['Link'] || record['link'] || record['File'] || record['file'] || '';
 
     if (!fileLink) {
         container.innerHTML = '<p style="color: #888;">No attachment available</p>';

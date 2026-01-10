@@ -1,69 +1,58 @@
-import { getSheetsClient, SHEET_ID, MAIN_SHEET, norm, json, buildHeaderIndex } from "./_sheets.js";
+import { supabase } from "./_supabase.js";
+
+function json(res, status, body) {
+    res.statusCode = status;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify(body));
+}
 
 export default async function handler(req, res) {
     try {
-        const sheets = getSheetsClient();
+        if (!supabase) {
+            return json(res, 500, { success: false, message: 'Supabase client not initialized' });
+        }
 
-        // Fetch header and data
-        const dataRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: SHEET_ID,
-            range: `${MAIN_SHEET}!A:Z`,
-            valueRenderOption: "FORMATTED_VALUE",
-        });
+        // Fetch data from Supabase invoices table
+        const { data, error } = await supabase
+            .from('invoices')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-        const values = dataRes.data.values || [];
-        if (values.length === 0) {
+        if (error) {
+            console.error("Supabase Error:", error);
+            return json(res, 500, { success: false, message: error.message });
+        }
+
+        if (!data || data.length === 0) {
             return json(res, 200, { success: true, data: [] });
         }
 
-        const headers = values[0].map(norm);
-        const headerMap = buildHeaderIndex(headers);
+        // Map Supabase fields to frontend display format
+        const result = data.map((item, index) => ({
+            // Core fields
+            "Invoice Date": item.invoice_date || "",
+            "Vender": item.vendor || "",
+            "Amount": item.amount != null ? String(item.amount) : "",
+            "Currency": item.currency || "",
+            "Amount(HKD)": item.amount_hkd != null ? String(item.amount_hkd) : "",
+            "Country": item.country || "",
+            "Category": item.category || "",
+            "Status": item.status || "",
+            "Charge to Company": item.charge_to_company || "",
+            "Charge to Project": item.charge_to_project || "",
+            "Owner": item.owner_name || "",
+            "Invoice ID": item.generated_invoice_id || "",
+            "Location(City)": item.location_city || "",
 
-        const result = [];
-        for (let i = 1; i < values.length; i++) {
-            const row = values[i];
-            const item = {};
+            // File fields - for R2 preview
+            "file_link": item.file_link || "",
+            "Drive_ID": item.file_id || "",
+            "file_ID_HASH": item.file_ID_HASH || "",  // R2 file hash for preview
 
-            // Actual columns from Google Sheet -> Display names
-            const columnMapping = {
-                "Invoice Date": ["Invoice_data", "Invoice Date", "Date"],
-                "Vender": ["Vendor", "Vender"],
-                "Amount": ["amount", "Amount"],
-                "Currency": ["currency", "Currency"],
-                "Amount(HKD)": ["Amount (HKD)", "Amount(HKD)", "Amount_HKD"],
-                "Country": ["Country"],
-                "Category": ["Category"],
-                "Status": ["Status"],
-                "Charge to Company": ["Charge to Company"],
-                "Charge to Project": ["Charge to Project"],
-                "Owner": ["Owner"],
-                "Invoice ID": ["Invoice_ID", "Invoice ID", "invoice_number"],
-                "file_link": ["file_link", "Attachment", "Link"],
-                "Location(City)": ["Location(City)", "Location"],
-                "Drive_ID": [", OvC", "File_ID", "ID", "file_id", "Drive_ID"]
-            };
-
-            // For each display column, try to find a matching header
-            for (const [displayName, possibleHeaders] of Object.entries(columnMapping)) {
-                let value = "";
-                for (const header of possibleHeaders) {
-                    const idx = headerMap.get(header);
-                    if (idx !== undefined) {
-                        value = norm(row[idx]);
-                        break;
-                    }
-                }
-                item[displayName] = value;
-            }
-
-            // Include original row number for updates
-            item._rowNumber = i + 1;
-
-            // Only add if there is at least some data
-            if (Object.values(item).some(v => v !== "")) {
-                result.push(item);
-            }
-        }
+            // Use Supabase id as row identifier
+            "_rowNumber": item.id,
+            "_supabaseId": item.id
+        }));
 
         return json(res, 200, {
             success: true,
