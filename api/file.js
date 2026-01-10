@@ -2,12 +2,12 @@ import { S3Client, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s
 
 const r2 = new S3Client({
     region: "auto",
-    endpoint: process.env.R2_ENDPOINT,
+    endpoint: process.env.R2_ENDPOINT?.replace(/\/$/, ""),
     credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     },
-    forcePathStyle: true,
+    forcePathStyle: false,
 });
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
@@ -99,7 +99,14 @@ export default async function handler(req, res) {
             name: err.name,
             code: err.code,
             stack: err.stack,
-            metadata: err.$metadata
+            metadata: err.$metadata,
+            env_check: {
+                endpoint: !!process.env.R2_ENDPOINT,
+                bucket: !!process.env.R2_BUCKET_NAME,
+                bucket_name: process.env.R2_BUCKET_NAME,
+                region: "auto",
+                forcePathStyle: true
+            }
         }));
     }
 }
