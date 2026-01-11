@@ -1,43 +1,15 @@
 /**
- * 自动汇率更新 API
- * 
- * 每月第一天自动调用此接口更新汇率
- * 可以配合 cron job 或云函数定时触发
- * 
- * GET /api/update-rates - 手动触发更新
- * GET /api/update-rates?force=true - 强制更新（即使不是月初）
+ * 汇率更新 API（改为写入 Supabase，不再写 Google Sheet）
+ *
+ * GET /api/update-rates            - 仅在每月1日运行（除非 ?force=true）
+ * GET /api/update-rates?force=true - 强制运行
+ *
+ * 逻辑：
+ * 1) 货币列表来源：Supabase 表 currency_list
+ * 2) 写入目标：Supabase 表 currency_rates（唯一键 currency_code + rate_date）
  */
 
-import { google } from 'googleapis';
-
-const SHEET_ID = process.env.SHEET_ID;
-const CURRENCY_LIST_SHEET = 'currency_list';
-const CURRENCY_HISTORY_SHEET = 'currency_History';
-
-function cleanEnv(v) {
-    if (!v) return '';
-    v = v.trim();
-    if (v.startsWith('"') && v.endsWith('"')) {
-        v = v.substring(1, v.length - 1);
-    } else if (v.startsWith("'") && v.endsWith("'")) {
-        v = v.substring(1, v.length - 1);
-    }
-    return v;
-}
-
-function getSheetsClient() {
-    const email = cleanEnv(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
-    let key = cleanEnv(process.env.GOOGLE_PRIVATE_KEY);
-    key = key.replace(/\\n/g, '\n');
-
-    const auth = new google.auth.JWT({
-        email,
-        key,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-
-    return google.sheets({ version: 'v4', auth });
-}
+import { supabase } from './_supabase.js';
 
 async function getExchangeRate(fromCurrency, toCurrency = 'HKD') {
     try {
@@ -45,8 +17,8 @@ async function getExchangeRate(fromCurrency, toCurrency = 'HKD') {
         const response = await fetch(url);
         if (!response.ok) return null;
         const data = await response.json();
-        return data.rates[toCurrency] || null;
-    } catch (e) {
+        return data.rates?.[toCurrency] ?? null;
+    } catch {
         return null;
     }
 }
@@ -63,15 +35,24 @@ function getFirstDayOfMonth() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
 }
 
+function json(res, status, body) {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify(body));
+}
+
 export default async function handler(req, res) {
     try {
+        if (!supabase) {
+            return json(res, 500, { success: false, message: 'Supabase client not initialized' });
+        }
+
         const today = new Date();
         const isFirstDay = today.getDate() === 1;
         const forceUpdate = req.query.force === 'true';
 
-        // 只在每月第一天运行，除非强制更新
         if (!isFirstDay && !forceUpdate) {
-            return res.json({
+            return json(res, 200, {
                 success: true,
                 message: '今天不是月初，无需更新汇率',
                 today: formatDate(today),
@@ -79,86 +60,85 @@ export default async function handler(req, res) {
             });
         }
 
-        const sheets = getSheetsClient();
+        // 1) 读取货币列表（Supabase currency_list）
+        const { data: currencyRows, error: listErr } = await supabase
+            .from('currency_list')
+            .select('currency_code');
+
+        if (listErr) {
+            return json(res, 500, { success: false, message: `读取货币列表失败: ${listErr.message}` });
+        }
+
+        const currencies = (currencyRows || [])
+            .map(r => (r.currency_code || '').trim().toUpperCase())
+            .filter(Boolean);
+
+        if (currencies.length === 0) {
+            return json(res, 200, { success: true, message: '货币列表为空' });
+        }
+
         const firstDay = getFirstDayOfMonth();
         const dateStr = formatDate(firstDay);
 
-        // 读取货币列表
-        const currencyListRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: SHEET_ID,
-            range: `${CURRENCY_LIST_SHEET}!A:A`,
-            valueRenderOption: 'FORMATTED_VALUE',
-        });
+        // 2) 获取当月已存在记录，避免重复
+        const { data: existing, error: existErr } = await supabase
+            .from('currency_rates')
+            .select('currency_code, rate_date')
+            .eq('rate_date', dateStr);
 
-        const currencyRows = currencyListRes.data.values || [];
-        if (currencyRows.length <= 1) {
-            return res.json({ success: false, message: '货币列表为空' });
+        if (existErr) {
+            return json(res, 500, { success: false, message: `读取历史记录失败: ${existErr.message}` });
         }
 
-        const currencies = currencyRows.slice(1).map(r => (r[0] || '').trim().toUpperCase()).filter(c => c);
+        const existingSet = new Set((existing || []).map(r => `${r.currency_code}_${r.rate_date}`));
 
-        // 检查历史记录
-        const historyRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: SHEET_ID,
-            range: `${CURRENCY_HISTORY_SHEET}!A:C`,
-            valueRenderOption: 'FORMATTED_VALUE',
-        });
-
-        const historyRows = historyRes.data.values || [];
-        const existingRecords = new Set();
-        for (let i = 1; i < historyRows.length; i++) {
-            const code = (historyRows[i][0] || '').trim().toUpperCase();
-            const date = (historyRows[i][1] || '').trim();
-            if (code && date) existingRecords.add(`${code}_${date}`);
-        }
-
-        // 获取汇率
-        const newRows = [];
+        const upserts = [];
         const results = [];
 
         for (const currency of currencies) {
-            const recordKey = `${currency}_${dateStr}`;
-
-            if (existingRecords.has(recordKey)) {
+            const key = `${currency}_${dateStr}`;
+            if (existingSet.has(key)) {
                 results.push({ currency, status: 'skipped', message: '已存在' });
                 continue;
             }
 
             if (currency === 'HKD') {
-                newRows.push([currency, dateStr, '1']);
+                upserts.push({ currency_code: currency, rate_date: dateStr, rate_to_hkd: 1 });
                 results.push({ currency, rate: 1, status: 'success' });
             } else {
                 const rate = await getExchangeRate(currency);
                 if (rate !== null) {
-                    newRows.push([currency, dateStr, rate.toString()]);
+                    upserts.push({ currency_code: currency, rate_date: dateStr, rate_to_hkd: rate });
                     results.push({ currency, rate, status: 'success' });
                 } else {
                     results.push({ currency, status: 'failed', message: '获取失败' });
                 }
             }
 
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // 轻量限速
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
 
-        // 写入
-        if (newRows.length > 0) {
-            await sheets.spreadsheets.values.append({
-                spreadsheetId: SHEET_ID,
-                range: `${CURRENCY_HISTORY_SHEET}!A:C`,
-                valueInputOption: 'USER_ENTERED',
-                requestBody: { values: newRows }
-            });
+        // 3) 写入 Supabase（upsert，唯一键 currency_code+rate_date）
+        if (upserts.length > 0) {
+            const { error: upsertErr } = await supabase
+                .from('currency_rates')
+                .upsert(upserts, { onConflict: 'currency_code,rate_date' });
+
+            if (upsertErr) {
+                return json(res, 500, { success: false, message: `写入失败: ${upsertErr.message}` });
+            }
         }
 
-        return res.json({
+        return json(res, 200, {
             success: true,
-            message: `已更新 ${newRows.length} 条汇率记录`,
+            message: `已更新 ${upserts.length} 条汇率记录`,
             date: dateStr,
             results
         });
 
     } catch (e) {
         console.error('汇率更新错误:', e);
-        return res.status(500).json({ success: false, message: e.message });
+        return json(res, 500, { success: false, message: e?.message || String(e) });
     }
 }
