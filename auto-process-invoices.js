@@ -128,12 +128,12 @@ async function processInvoices() {
             // Generate hash ID from R2 key for consistency
             const fileHash = crypto.createHash('md5').update(file.key).digest('hex').substring(0, 12);
 
-            // 2. Check if already processed in Supabase (check file_id_hash_r2)
-            // We check file_id_hash_r2. We can also check file_id for legacy compatibility if needed.
+            // 2. Check if already processed in Supabase (check file_ID_HASH_R2)
+            // We check file_ID_HASH_R2. We can also check file_id for legacy compatibility if needed.
             let query = supabase
                 .from('invoices')
                 .select('id')
-                .or(`file_id_hash_r2.eq.${fileHash},file_id_hash_r2.eq.${file.etag}`)
+                .or(`file_ID_HASH_R2.eq.${fileHash},file_ID_HASH_R2.eq.${file.etag}`)
                 .maybeSingle();
 
             const { data: existing, error: checkError } = await query;
@@ -163,7 +163,7 @@ async function processInvoices() {
                 // ... (Data Cleaning - unchanged) ...
 
                 const processedData = {
-                    file_id_hash_r2: fileHash,  // Store 12-char Hash in new column
+                    file_ID_HASH_R2: file.etag,  // Use R2 ETag for consistency
                     // file_id:  // We do NOT set file_id here as we don't have the Google Drive ID
                     invoice_date: cleanString(rawDate),
                     vendor: cleanString(rawVendor),

@@ -227,10 +227,10 @@ export default async function handler(req, res) {
             };
 
             if (archivedLink) {
-                updateData.archived_file_link = archivedLink;
+                updateData.achieved_file_link = archivedLink;
             }
             if (archivedFileId) {
-                updateData.archived_file_id = archivedFileId;
+                updateData.achieved_file_id = archivedFileId;
             }
 
             const { error: updateErr } = await supabase
