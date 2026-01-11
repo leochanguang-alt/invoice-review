@@ -19,6 +19,7 @@ const r2 = new S3Client({
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_FR_GOOGLE_DRIVE_PREFIX = "bui_invoice/original_files/fr_google_drive/";
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
 
 // Extract Drive file ID from file_link
 function extractDriveId(fileLink) {
@@ -35,6 +36,25 @@ function extractDriveId(fileLink) {
 function sanitizeFilename(name) {
     if (!name) return "";
     return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
+}
+
+async function upsertSupabaseRecord(r2Key, etag) {
+    if (!supabase) return;
+    const r2Link = `${R2_PUBLIC_URL}/${r2Key}`;
+    const payload = {
+        file_ID_HASH_R2: etag || null,
+        file_link_r2: r2Link,
+        file_link: r2Link,
+        status: 'Waiting for Confirm',
+    };
+    try {
+        const { error } = await supabase
+            .from('invoices')
+            .upsert([payload], { onConflict: 'file_ID_HASH_R2' });
+        if (error) console.warn(`[UPSERT] failed for ${r2Key}:`, error.message);
+    } catch (e) {
+        console.warn(`[UPSERT] exception for ${r2Key}:`, e.message);
+    }
 }
 
 // List all existing files in R2 fr_google_drive
@@ -183,6 +203,7 @@ async function syncAllFilesToR2() {
                 console.error(`${progress} DB Error: ${updateErr.message}`);
             }
 
+            await upsertSupabaseRecord(r2Key, etag);
             newR2Keys.push(r2Key);
             successCount++;
 
