@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { S3Client } from "@aws-sdk/client-s3";
+import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getDriveAuth } from "./api/_sheets.js";
 import { supabase } from './api/_supabase.js';
@@ -20,7 +20,8 @@ const R2_FR_PREFIX = "bui_invoice/original_files/fr_google_drive/";
 const R2_PUBLIC_URL_BASE = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
 
 function sanitizeFilename(name) {
-    return name.replace(/[:\\/]/g, '_');
+    if (!name) return "";
+    return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
 }
 
 async function syncMissingFiles() {
@@ -70,6 +71,19 @@ async function syncMissingFiles() {
 
             // Upload
             const r2Key = `${R2_FR_PREFIX}${sanitizeFilename(originalName)}`;
+
+            // Skip if already exists
+            try {
+                await r2.send(new HeadObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: r2Key
+                }));
+                console.log(`[${invoice.id}] Skip existing in R2: ${r2Key}`);
+                continue;
+            } catch (e) {
+                // proceed if not found
+            }
+
             const upload = new Upload({
                 client: r2,
                 params: {

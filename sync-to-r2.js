@@ -17,6 +17,11 @@ const r2 = new S3Client({
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 
+function sanitizeName(name) {
+    if (!name) return "";
+    return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
+}
+
 async function syncFolderToR2(folderId, r2Prefix) {
     console.log(`Scanning Drive folder: ${folderId} -> R2: ${r2Prefix}`);
 
@@ -29,7 +34,8 @@ async function syncFolderToR2(folderId, r2Prefix) {
         });
 
         for (const file of res.data.files) {
-            const nextR2Prefix = `${r2Prefix}/${file.name}`;
+            const safeName = sanitizeName(file.name);
+            const nextR2Prefix = `${r2Prefix}/${safeName}`;
 
             if (file.mimeType.startsWith('application/vnd.google-apps.')) {
                 if (file.mimeType === "application/vnd.google-apps.folder") {

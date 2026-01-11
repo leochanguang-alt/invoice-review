@@ -100,10 +100,11 @@ export default async function handler(req, res) {
         const results = [];
 
         for (const record of records) {
-            const { rowNumber, projectCode, amount, currency, fileId } = record;
+            const { rowNumber, projectCode, amount, currency, fileId: inputFileId } = record;
             const recordId = rowNumber; // rowNumber is actually Supabase id
             console.log(`[SUBMIT] Processing record ${recordId}, fileId: "${fileId}", project: "${projectCode}"`);
 
+            let fileId = inputFileId || "";
             // Generate Invoice_ID
             const seq = ++projectSequences[projectCode || 'UNKNOWN'];
             const seqStr = seq.toString().padStart(4, '0');
@@ -121,7 +122,7 @@ export default async function handler(req, res) {
             // Robustness: If fileId missing from request OR just to be safe, lookup R2 link
             let dbR2Link = "";
 
-            if (!fileId || fileId.trim() === "" || true) { // Always check DB for strongest link
+            if (!fileId || fileId.trim() === "") {
                 try {
                     const { data: recData } = await supabase
                         .from('invoices')
@@ -129,7 +130,7 @@ export default async function handler(req, res) {
                         .eq('id', recordId)
                         .single();
                     if (recData) {
-                        if (!fileId) fileId = recData.file_id || "";
+                        fileId = recData.file_id || "";
                         dbR2Link = recData.file_link_r2 || recData.file_link;
                     }
                 } catch (e) {
@@ -137,7 +138,7 @@ export default async function handler(req, res) {
                 }
             }
 
-            if ((fileId && fileId.trim() !== "") || true) { // Force enter to check DB file_link
+            if (fileId && fileId.trim() !== "") {
                 try {
                     // Determine file extension from fileId (which could be filename or R2 key)
                     let originalKey = "";
@@ -227,10 +228,10 @@ export default async function handler(req, res) {
             };
 
             if (archivedLink) {
-                updateData.achieved_file_link = archivedLink;
+                updateData.archived_file_link = archivedLink;
             }
             if (archivedFileId) {
-                updateData.achieved_file_id = archivedFileId;
+                updateData.archived_file_id = archivedFileId;
             }
 
             const { error: updateErr } = await supabase

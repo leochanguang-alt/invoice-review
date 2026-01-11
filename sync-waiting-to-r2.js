@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { S3Client } from "@aws-sdk/client-s3";
+import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getDriveAuth } from "./api/_sheets.js";
 import { supabase } from './api/_supabase.js';
@@ -29,7 +29,8 @@ function extractDriveId(fileLink) {
 }
 
 function sanitizeFilename(name) {
-    return name.replace(/:/g, '_');
+    if (!name) return "";
+    return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
 }
 
 async function syncWaitingInvoices() {
@@ -76,6 +77,19 @@ async function syncWaitingInvoices() {
             );
 
             const r2Key = `${R2_FR_PREFIX}${sanitizedName}`;
+
+            // Skip if already exists
+            try {
+                await r2.send(new HeadObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: r2Key,
+                }));
+                console.log(`[${invoice.id}] Skip existing in R2: ${r2Key}`);
+                continue;
+            } catch (e) {
+                // proceed if not found
+            }
+
             console.log(`[${invoice.id}] Uploading to R2: ${r2Key}`);
 
             const upload = new Upload({
