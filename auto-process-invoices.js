@@ -64,6 +64,11 @@ async function getRecordCount() {
 async function processInvoices() {
     console.log('--- Starting R2-Based Invoice Processing ---');
 
+    if (process.env.ENABLE_GEMINI_INGEST !== 'true') {
+        console.log('Gemini ingest disabled (set ENABLE_GEMINI_INGEST=true to enable). Exit.');
+        return;
+    }
+
     // Record count before processing
     const countBefore = await getRecordCount();
     writeLog(`=== Sync Started === Records before: ${countBefore}`);

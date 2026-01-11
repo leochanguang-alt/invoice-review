@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { S3Client, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
+import { S3Client, ListObjectsV2Command, DeleteObjectsCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getDriveAuth } from "./api/_sheets.js";
 import { supabase } from './api/_supabase.js';
@@ -33,7 +33,8 @@ function extractDriveId(fileLink) {
 
 // Sanitize filename for Windows/R2 compatibility
 function sanitizeFilename(name) {
-    return name.replace(/:/g, '_');
+    if (!name) return "";
+    return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
 }
 
 // List all existing files in R2 fr_google_drive
@@ -142,8 +143,20 @@ async function syncAllFilesToR2() {
                 { responseType: "stream" }
             );
 
-            // Upload to R2
+            // Upload to R2 (skip if already exists)
             const r2Key = `${R2_FR_GOOGLE_DRIVE_PREFIX}${sanitizedName}`;
+
+            try {
+                await r2.send(new HeadObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: r2Key,
+                }));
+                console.log(`${progress} Skip: already exists in R2 -> ${r2Key}`);
+                skipCount++;
+                continue;
+            } catch (e) {
+                // Not found -> proceed
+            }
 
             const upload = new Upload({
                 client: r2,
