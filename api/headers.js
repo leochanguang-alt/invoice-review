@@ -1,21 +1,31 @@
-import { getSheetsClient, SHEET_ID, MAIN_SHEET, norm, json } from "./_sheets.js";
+import { supabase } from "./_supabase.js";
+
+function json(res, status, body) {
+    res.statusCode = status;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify(body));
+}
 
 export default async function handler(req, res) {
     try {
-        const sheets = getSheetsClient();
+        if (!supabase) {
+            return json(res, 500, { success: false, message: "Supabase client not initialized" });
+        }
 
-        const dataRes = await sheets.spreadsheets.values.get({
-            spreadsheetId: SHEET_ID,
-            range: `${MAIN_SHEET}!1:1`,
-            valueRenderOption: "FORMATTED_VALUE",
-        });
+        // Read one row to infer headers
+        const { data, error } = await supabase
+            .from('invoices')
+            .select('*')
+            .limit(1);
 
-        const headers = (dataRes.data.values?.[0] || []).map(norm);
+        if (error) {
+            console.error("Supabase Error:", error.message);
+            return json(res, 500, { success: false, message: error.message });
+        }
 
-        return json(res, 200, {
-            success: true,
-            headers: headers
-        });
+        const headers = data && data.length > 0 ? Object.keys(data[0]) : [];
+
+        return json(res, 200, { success: true, headers });
     } catch (e) {
         console.error("API Error:", e);
         return json(res, 500, { success: false, message: e?.message || String(e) });

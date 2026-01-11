@@ -61,6 +61,15 @@ async function getRecordCount() {
     return count || 0;
 }
 
+const cleanAmount = (val) => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const cleaned = val.toString().replace(/[^\d.-]/g, '');
+    return parseFloat(cleaned) || 0;
+};
+
+const cleanString = (val) => (val || '').toString().trim();
+
 async function processInvoices() {
     console.log('--- Starting R2-Based Invoice Processing ---');
 
@@ -163,9 +172,50 @@ async function processInvoices() {
 
                 const buffer = await streamToBuffer(getRes.Body);
 
-                // ... (Gemini Extraction - unchanged) ...
+                // Gemini Extraction
+                const prompt = `请分析这张发票图片。提取以下信息并以严格的 JSON 格式返回，不要包含任何 Markdown 格式或解释性文字：
+invoice_number (发票号码)
+date (日期, 格式 YYYY-MM-DD)
+vendor_name (供应商名称)
+City:(费用发生的城市）
+Country:(费用发生的国家）
+total_amount (总金额, 数字格式)
+currency (货币单位选择其一:GBP/HKD/USD/EUR/SEK/DKK/CHF/CNY/CAD/AED)
+category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/office expense/Communication/IT expense/Meal)`;
 
-                // ... (Data Cleaning - unchanged) ...
+                const result = await model.generateContent([
+                    {
+                        inlineData: {
+                            data: buffer.toString('base64'),
+                            mimeType: file.mimeType
+                        }
+                    },
+                    prompt
+                ]);
+
+                const responseText = result.response.text();
+                let jsonStr = responseText;
+                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) jsonStr = jsonMatch[0];
+
+                const invoiceData = JSON.parse(jsonStr);
+
+                // Data Cleaning & Normalization
+                const getVal = (obj, keys) => {
+                    for (const k of keys) {
+                        if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+                    }
+                    return null;
+                };
+
+                const rawDate = getVal(invoiceData, ['date', 'invoice_date']);
+                const rawVendor = getVal(invoiceData, ['vendor_name', 'vendor']);
+                const rawAmount = getVal(invoiceData, ['total_amount', 'amount']);
+                const rawCurrency = getVal(invoiceData, ['currency']);
+                const rawInvoiceNum = getVal(invoiceData, ['invoice_number', 'invoice_no']);
+                const rawCity = getVal(invoiceData, ['city', 'City', 'location_city']);
+                const rawCountry = getVal(invoiceData, ['country', 'Country']);
+                const rawCategory = getVal(invoiceData, ['category']);
 
                 const processedData = {
                     file_ID_HASH_R2: file.etag,  // Use R2 ETag for consistency
