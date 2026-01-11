@@ -44,10 +44,12 @@ export default async function handler(req, res) {
                 return json(res, 400, { success: false, message: "Invalid table key" });
             }
 
+            const sortCol = tableKey === 'currency_history' ? 'rate_date' : 'created_at';
+
             const { data, error } = await supabase
                 .from(tableName)
                 .select('*')
-                .order('created_at', { ascending: false });
+                .order(sortCol, { ascending: false });
 
             if (error) {
                 console.error("[MANAGE] GET error:", error);
