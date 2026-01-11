@@ -995,7 +995,7 @@ async function submitSelectedRecords() {
             projectCode: (r['Charge to Project'] || '').trim(),
             amount: r['Amount'] || '',
             currency: r['Currency'] || '',
-            fileId: r['Drive_ID'] || ''
+            fileId: r['file_id'] || r['Drive_ID'] || ''
         }));
 
     console.log('[DEBUG] Records to submit:', recordsToSubmit);

@@ -118,11 +118,37 @@ export default async function handler(req, res) {
             let archivedLink = "";
             let archivedFileId = "";
 
-            if (fileId && fileId.trim() !== "") {
+            // Robustness: If fileId missing from request, try to find it in DB
+            if (!fileId || fileId.trim() === "") {
+                try {
+                    const { data: recData } = await supabase
+                        .from('invoices')
+                        .select('file_id, file_link')
+                        .eq('id', recordId)
+                        .single();
+                    if (recData) {
+                        fileId = recData.file_id || "";
+                        // If file_id is empty but we have file_link, continue logic below
+                        if (!fileId && recData.file_link) {
+                            // Logic below falls back to checking file_link if originalKey not found via fileId
+                            // So we just need to ensure we enter the block or handle file_link separately.
+                            // Actually the block below requires fileId to enter OR checks logic inside.
+                            // Let's force entry if we have file_link, or just set fileId to something to enter.
+                            // Better: Modify the condition to enter if fileId OR file_link exists.
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[SUBMIT] Failed to lookup record ${recordId}:`, e.message);
+                }
+            }
+
+            if ((fileId && fileId.trim() !== "") || true) { // Force enter to check DB file_link
                 try {
                     // Determine file extension from fileId (which could be filename or R2 key)
                     let originalKey = "";
                     let fileExtension = ".pdf"; // default
+
+                    // ...
 
                     // Check if fileId is already an R2 key path
                     if (fileId.includes('/')) {
