@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getDriveAuth } from "./api/_sheets.js";
+import { supabase } from './api/_supabase.js';
 
 const drive = google.drive({ version: "v3", auth: getDriveAuth() });
 
@@ -16,10 +17,30 @@ const r2 = new S3Client({
 });
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
 
 function sanitizeName(name) {
     if (!name) return "";
     return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
+}
+
+async function upsertSupabaseRecord(r2Key, etag) {
+    if (!supabase) return;
+    const r2Link = `${R2_PUBLIC_URL}/${r2Key}`;
+    const payload = {
+        file_ID_HASH_R2: etag || null,
+        file_link_r2: r2Link,
+        file_link: r2Link,
+        status: 'Waiting for Confirm',
+    };
+    try {
+        const { error } = await supabase
+            .from('invoices')
+            .upsert([payload], { onConflict: 'file_ID_HASH_R2' });
+        if (error) console.warn(`[UPSERT] failed for ${r2Key}:`, error.message);
+    } catch (e) {
+        console.warn(`[UPSERT] exception for ${r2Key}:`, e.message);
+    }
 }
 
 async function syncFolderToR2(folderId, r2Prefix) {
@@ -79,7 +100,9 @@ async function syncFolderToR2(folderId, r2Prefix) {
                         },
                     });
 
-                    await upload.done();
+                    const resUpload = await upload.done();
+                    const etag = resUpload.ETag?.replace(/"/g, '') || null;
+                    await upsertSupabaseRecord(r2Key, etag);
                     console.log(`Successfully uploaded: ${file.name}`);
                 } catch (err) {
                     console.error(`Error syncing ${file.name}:`, err.message);
