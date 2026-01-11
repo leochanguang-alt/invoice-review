@@ -419,12 +419,15 @@ tr:hover td {
   overflow: auto;
 }
 
+/* Adjusted for better visibility */
 .review-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  /* Reduced from 0.8rem */
 }
 
+/* ... existing headers ... */
 .review-table th {
   background: #f8fafc;
   padding: 0.75rem 0.5rem;
@@ -440,6 +443,127 @@ tr:hover td {
 .review-table td {
   padding: 0.5rem;
   border-bottom: 1px solid var(--border);
+  white-space: normal;
+  /* Changed from default nowrap to allow wrapping */
+  word-break: break-word;
+  /* Ensure long words don't overflow */
+  vertical-align: top;
+}
+
+.review-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.review-row:hover {
+  background: #f1f5f9;
+}
+
+.review-row.selected {
+  background: #e0f2fe;
+}
+
+.review-row.reviewed {
+  opacity: 0.6;
+}
+
+.review-row.submit-selected {
+  background: #dcfce7;
+}
+
+.review-row.submit-selected:hover {
+  background: #bbf7d0;
+}
+
+.review-row.reviewed .review-btn {
+  background: #94a3b8;
+}
+
+.review-record-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  margin-bottom: 0.5rem;
+  transition: all 0.2s;
+}
+
+.review-record-item:hover {
+  background: #f1f5f9;
+}
+
+.review-record-item.selected {
+  background: #e0f2fe;
+  border-color: var(--primary);
+}
+
+.review-record-item.reviewed {
+  opacity: 0.6;
+}
+
+.review-record-item.reviewed .review-btn {
+  background: #94a3b8;
+}
+
+.review-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: var(--primary);
+  color: white;
+  margin-right: 0.75rem;
+  white-space: nowrap;
+}
+
+.review-btn:hover {
+  background: var(--primary-hover);
+}
+
+.review-record-info {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: 0.8rem;
+}
+
+.review-record-info .record-field {
+  min-width: 100px;
+}
+
+.review-record-info .field-label {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.review-record-info span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review-right-panel {
+  width: 480px;
+  /* Increased from 400px */
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ... existing ... */
+
+.detail-field input,
+.detail-field select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  /* Reduced from 0.875rem */
 }
 
 .review-row {
@@ -662,18 +786,21 @@ tr:hover td {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.2),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent);
   animation: shimmer 1.5s infinite;
 }
 
 @keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 .progress-text {

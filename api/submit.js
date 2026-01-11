@@ -118,24 +118,19 @@ export default async function handler(req, res) {
             let archivedLink = "";
             let archivedFileId = "";
 
-            // Robustness: If fileId missing from request, try to find it in DB
-            if (!fileId || fileId.trim() === "") {
+            // Robustness: If fileId missing from request OR just to be safe, lookup R2 link
+            let dbR2Link = "";
+
+            if (!fileId || fileId.trim() === "" || true) { // Always check DB for strongest link
                 try {
                     const { data: recData } = await supabase
                         .from('invoices')
-                        .select('file_id, file_link')
+                        .select('file_id, file_link, file_link_r2')
                         .eq('id', recordId)
                         .single();
                     if (recData) {
-                        fileId = recData.file_id || "";
-                        // If file_id is empty but we have file_link, continue logic below
-                        if (!fileId && recData.file_link) {
-                            // Logic below falls back to checking file_link if originalKey not found via fileId
-                            // So we just need to ensure we enter the block or handle file_link separately.
-                            // Actually the block below requires fileId to enter OR checks logic inside.
-                            // Let's force entry if we have file_link, or just set fileId to something to enter.
-                            // Better: Modify the condition to enter if fileId OR file_link exists.
-                        }
+                        if (!fileId) fileId = recData.file_id || "";
+                        dbR2Link = recData.file_link_r2 || recData.file_link;
                     }
                 } catch (e) {
                     console.warn(`[SUBMIT] Failed to lookup record ${recordId}:`, e.message);
@@ -183,25 +178,17 @@ export default async function handler(req, res) {
                             }
                         }
 
-                        // If still not found, try to get file link from Supabase record
-                        if (!originalKey) {
-                            const { data: recordData } = await supabase
-                                .from('invoices')
-                                .select('file_link, file_id')
-                                .eq('id', recordId)
-                                .single();
-
-                            if (recordData?.file_link) {
-                                // Extract path from R2 URL
-                                const urlMatch = recordData.file_link.match(/bui_invoice\/.*$/);
-                                if (urlMatch) {
-                                    originalKey = urlMatch[0];
-                                    const parts = originalKey.split('.');
-                                    if (parts.length > 1) {
-                                        fileExtension = '.' + parts[parts.length - 1];
-                                    }
-                                    console.log(`[SUBMIT] Found original key from file_link: ${originalKey}`);
+                        // If still not found, try to get file link from Supabase record (dbR2Link)
+                        if (!originalKey && dbR2Link) {
+                            // Extract path from R2 URL
+                            const urlMatch = dbR2Link.match(/bui_invoice\/.*$/);
+                            if (urlMatch) {
+                                originalKey = urlMatch[0];
+                                const parts = originalKey.split('.');
+                                if (parts.length > 1) {
+                                    fileExtension = '.' + parts[parts.length - 1];
                                 }
+                                console.log(`[SUBMIT] Found original key from DB R2 link: ${originalKey}`);
                             }
                         }
                     }

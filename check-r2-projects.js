@@ -7,50 +7,45 @@ const r2 = new S3Client({
     credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-    },
+    }
 });
+const BUCKET_NAME = process.env.R2_BUCKET_NAME || "buiservice-assets";
 
-const BUCKET_NAME = process.env.R2_BUCKET_NAME;
+async function checkProjects() {
+    console.log("Checking R2 projects folder...");
+    const files = [];
+    let token;
 
-async function listR2Prefix(prefix) {
-    console.log(`\nListing R2 prefix: ${prefix}`);
+    // We want to list everything under bui_invoice/projects/
+    // Since we don't know the exact project codes, we'll list recursively
+    do {
+        const res = await r2.send(new ListObjectsV2Command({
+            Bucket: BUCKET_NAME,
+            Prefix: 'bui_invoice/projects/',
+            ContinuationToken: token
+        }));
 
-    const res = await r2.send(new ListObjectsV2Command({
-        Bucket: BUCKET_NAME,
-        Prefix: prefix,
-        Delimiter: '/',
-        MaxKeys: 50
-    }));
-
-    // List directories (CommonPrefixes)
-    if (res.CommonPrefixes && res.CommonPrefixes.length > 0) {
-        console.log(`\nSubdirectories:`);
-        for (const p of res.CommonPrefixes) {
-            const name = p.Prefix.replace(prefix, '').replace(/\/$/, '');
-            console.log(`  📁 ${name}`);
-        }
-    }
-
-    // List files (Contents)
-    if (res.Contents && res.Contents.length > 0) {
-        console.log(`\nFiles (first 10):`);
-        res.Contents.slice(0, 10).forEach(f => {
-            const name = f.Key.split('/').pop();
-            console.log(`  📄 ${name}`);
+        (res.Contents || []).forEach(o => {
+            // Filter out placeholder files
+            if (!o.Key.endsWith('.placeholder')) {
+                files.push({
+                    key: o.Key,
+                    lastModified: o.LastModified,
+                    size: o.Size
+                });
+            }
         });
-        if (res.Contents.length > 10) {
-            console.log(`  ... and ${res.Contents.length - 10} more files`);
-        }
-    }
+        token = res.NextContinuationToken;
+    } while (token);
+
+    // Sort by LastModified descending
+    files.sort((a, b) => b.lastModified - a.lastModified);
+
+    console.log(`Found ${files.length} project files.`);
+    console.log("Top 15 most recently modified files:");
+    files.slice(0, 15).forEach(f => {
+        console.log(`[${f.lastModified.toISOString()}] ${f.key} (${f.size} bytes)`);
+    });
 }
 
-async function main() {
-    console.log('=== Checking R2 Structure for Projects ===');
-
-    // Check if there's a projects folder
-    await listR2Prefix('bui_invoice/');
-    await listR2Prefix('bui_invoice/projects/');
-    await listR2Prefix('bui_invoice/archived/');
-}
-
-main().catch(console.error);
+checkProjects().catch(console.error);

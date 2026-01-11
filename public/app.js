@@ -1241,12 +1241,11 @@ function renderAttachmentPreview(record) {
     // Clear previous
     container.innerHTML = '';
 
-    // Get file link (R2 URL or Google Drive link)
-    const fileLink = record['file_link'] || '';
+    // Priority 1: Check for R2 Link (New field > Old field)
+    let fileLink = record.file_link_r2 || record.file_link || '';
 
-    // Priority 1: Use R2 file via file_link (contains R2 URL)
-    if (fileLink && fileLink.includes('.r2.cloudflarestorage.com')) {
-        // Use our R2 file proxy API
+    if (fileLink && (fileLink.includes('r2.cloudflarestorage.com') || fileLink.includes('buiservice-assets'))) {
+        // If it's an R2 link, we might need to proxy it or use it directly if public
         const r2Url = `/api/file?link=${encodeURIComponent(fileLink)}`;
 
         const isPdf = fileLink.toLowerCase().includes('.pdf');
