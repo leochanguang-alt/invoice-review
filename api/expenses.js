@@ -45,9 +45,12 @@ export default async function handler(req, res) {
             "Location(City)": item.location_city || "",
 
             // File fields - for R2 preview
+            "file_link_r2": item.file_link_r2 || "",
             "file_link": item.file_link || "",
+            "file_id": item.file_id || "",
             "Drive_ID": item.file_id || "",
-            "file_ID_HASH": item.file_ID_HASH || "",  // R2 file hash for preview
+            "file_ID_HASH": item.file_ID_HASH || "",
+            "file_ID_HASH_R2": item.file_ID_HASH_R2 || "",
 
             // Use Supabase id as row identifier
             "_rowNumber": item.id,
