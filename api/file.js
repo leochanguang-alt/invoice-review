@@ -39,16 +39,28 @@ export default async function handler(req, res) {
             r2Key = filePath;
         } else if (fileLink) {
             // Extract R2 key from full URL
-            // URL format: https://bucket.r2.cloudflarestorage.com/path/to/file
+            // Supported formats:
+            // 1. https://bucket.r2.cloudflarestorage.com/path/to/file
+            // 2. https://pub-xxx.r2.dev/path/to/file (R2.dev subdomain)
+            // 3. bui_invoice/... (already a path)
+            
             if (fileLink.includes('.r2.cloudflarestorage.com/')) {
                 r2Key = fileLink.split('.r2.cloudflarestorage.com/')[1];
+            } else if (fileLink.includes('.r2.dev/')) {
+                // R2.dev subdomain format: https://pub-xxx.r2.dev/path/to/file
+                r2Key = fileLink.split('.r2.dev/')[1];
             } else if (fileLink.startsWith('bui_invoice/')) {
                 // Already a path
                 r2Key = fileLink;
             } else {
+                console.error("Unrecognized file link format:", fileLink);
                 res.statusCode = 400;
                 res.setHeader("Content-Type", "application/json");
-                return res.end(JSON.stringify({ error: "Invalid file link format" }));
+                return res.end(JSON.stringify({ 
+                    error: "Invalid file link format",
+                    received: fileLink,
+                    hint: "Expected formats: *.r2.cloudflarestorage.com/*, *.r2.dev/*, or bui_invoice/*"
+                }));
             }
         }
 

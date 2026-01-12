@@ -17,7 +17,9 @@ const r2 = new S3Client({
 });
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
+// Normalize R2_PUBLIC_URL: remove trailing slash for consistent concatenation
+const RAW_R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
+const R2_PUBLIC_URL = RAW_R2_PUBLIC_URL.replace(/\/+$/, ''); // Remove trailing slashes
 const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // 仅同步最近N天
 
 function sanitizeName(name) {

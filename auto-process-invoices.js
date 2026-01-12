@@ -25,7 +25,9 @@ const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // 仅扫描最�
 // Construct public R2 URL (adjust based on your R2 bucket configuration)
 // If using custom domain: https://your-domain.com/
 // If using R2.dev: https://pub-xxx.r2.dev/
-const R2_PUBLIC_URL_BASE = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com/`;
+const RAW_R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
+// Normalize: remove trailing slash, we'll add it when concatenating
+const R2_PUBLIC_URL_BASE = RAW_R2_PUBLIC_URL.replace(/\/+$/, '') + '/';
 
 // Log function to write to sync-log.txt
 function writeLog(message) {
