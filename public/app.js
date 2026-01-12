@@ -1244,8 +1244,15 @@ function renderAttachmentPreview(record) {
     // Priority 1: Check for R2 Link (New field > Old field)
     let fileLink = record.file_link_r2 || record.file_link || '';
 
-    if (fileLink && (fileLink.includes('r2.cloudflarestorage.com') || fileLink.includes('buiservice-assets'))) {
-        // If it's an R2 link, we might need to proxy it or use it directly if public
+    // Check if it's an R2 link (supports multiple formats)
+    const isR2Link = fileLink && (
+        fileLink.includes('r2.cloudflarestorage.com') || 
+        fileLink.includes('.r2.dev') ||  // R2.dev subdomain format
+        fileLink.includes('buiservice-assets')
+    );
+
+    if (isR2Link) {
+        // Use API proxy to access R2 files (handles authentication and CORS)
         const r2Url = `/api/file?link=${encodeURIComponent(fileLink)}`;
 
         const isPdf = fileLink.toLowerCase().includes('.pdf');
