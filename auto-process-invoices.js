@@ -20,6 +20,7 @@ const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PREFIX = 'bui_invoice/original_files/fr_google_drive/';
 const GENAI_MODEL = 'gemini-2.0-flash';
 const LOG_FILE = path.join(process.cwd(), 'sync-log.txt');
+const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // 仅扫描最近N天
 
 // Construct public R2 URL (adjust based on your R2 bucket configuration)
 // If using custom domain: https://your-domain.com/
@@ -134,9 +135,14 @@ async function processInvoices() {
             continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : null;
         } while (continuationToken);
 
-        console.log(`Found ${allFiles.length} PDF/image files in R2.`);
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - DAYS_BACK);
+        const filtered = allFiles.filter(f => (f.lastModified ? new Date(f.lastModified) >= cutoff : true));
+        console.log(`Found ${allFiles.length} PDF/image files in R2. Filtering to last ${DAYS_BACK} days => ${filtered.length}`);
 
-        for (const file of allFiles) {
+        const filesToProcess = filtered;
+
+        for (const file of filesToProcess) {
             console.log(`\nProcessing file: ${file.name} (${file.key})`);
 
             // Generate hash ID from R2 key for consistency
