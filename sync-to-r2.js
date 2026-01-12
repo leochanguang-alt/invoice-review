@@ -18,6 +18,7 @@ const r2 = new S3Client({
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
+const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // 仅同步最近N天
 
 function sanitizeName(name) {
     if (!name) return "";
@@ -50,13 +51,23 @@ async function syncFolderToR2(folderId, r2Prefix) {
     do {
         const res = await drive.files.list({
             q: `'${folderId}' in parents and trashed = false`,
-            fields: "nextPageToken, files(id, name, mimeType)",
+            fields: "nextPageToken, files(id, name, mimeType, modifiedTime)",
             pageToken: pageToken,
         });
 
         for (const file of res.data.files) {
             const safeName = sanitizeName(file.name);
             const nextR2Prefix = `${r2Prefix}/${safeName}`;
+
+            // 时间过滤：只同步最近 DAYS_BACK 天
+            if (file.modifiedTime) {
+                const cutoff = new Date();
+                cutoff.setDate(cutoff.getDate() - DAYS_BACK);
+                if (new Date(file.modifiedTime) < cutoff) {
+                    // old file, skip
+                    continue;
+                }
+            }
 
             if (file.mimeType.startsWith('application/vnd.google-apps.')) {
                 if (file.mimeType === "application/vnd.google-apps.folder") {
