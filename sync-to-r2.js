@@ -34,7 +34,7 @@ async function upsertSupabaseRecord(r2Key, etag, driveFileId) {
     const payload = {
         file_ID_HASH_R2: etag || null,
         file_link_r2: r2Link,
-        file_link: r2Link,
+        file_link: driveLink,  // Google Drive link (not R2)
         file_id: driveFileId || null,  // Google Drive file ID
         status: 'Waiting for Confirm',
     };
