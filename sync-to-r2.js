@@ -27,13 +27,15 @@ function sanitizeName(name) {
     return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
 }
 
-async function upsertSupabaseRecord(r2Key, etag) {
+async function upsertSupabaseRecord(r2Key, etag, driveFileId) {
     if (!supabase) return;
     const r2Link = `${R2_PUBLIC_URL}/${r2Key}`;
+    const driveLink = driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null;
     const payload = {
         file_ID_HASH_R2: etag || null,
         file_link_r2: r2Link,
         file_link: r2Link,
+        file_id: driveFileId || null,  // Google Drive file ID
         status: 'Waiting for Confirm',
     };
     try {
@@ -41,6 +43,7 @@ async function upsertSupabaseRecord(r2Key, etag) {
             .from('invoices')
             .upsert([payload], { onConflict: 'file_ID_HASH_R2' });
         if (error) console.warn(`[UPSERT] failed for ${r2Key}:`, error.message);
+        else console.log(`[UPSERT] success: ${r2Key}, driveId: ${driveFileId}`);
     } catch (e) {
         console.warn(`[UPSERT] exception for ${r2Key}:`, e.message);
     }
@@ -115,8 +118,8 @@ async function syncFolderToR2(folderId, r2Prefix) {
 
                     const resUpload = await upload.done();
                     const etag = resUpload.ETag?.replace(/"/g, '') || null;
-                    await upsertSupabaseRecord(r2Key, etag);
-                    console.log(`Successfully uploaded: ${file.name}`);
+                    await upsertSupabaseRecord(r2Key, etag, file.id);  // Pass Google Drive file ID
+                    console.log(`Successfully uploaded: ${file.name} (Drive ID: ${file.id})`);
                 } catch (err) {
                     console.error(`Error syncing ${file.name}:`, err.message);
                 }
