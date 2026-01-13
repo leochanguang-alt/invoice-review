@@ -102,9 +102,8 @@ export default async function handler(req, res) {
         for (const record of records) {
             const { rowNumber, projectCode, amount, currency, fileId: inputFileId } = record;
             const recordId = rowNumber; // rowNumber is actually Supabase id
-            console.log(`[SUBMIT] Processing record ${recordId}, fileId: "${fileId}", project: "${projectCode}"`);
-
             let fileId = inputFileId || "";
+            console.log(`[SUBMIT] Processing record ${recordId}, fileId: "${fileId}", project: "${projectCode}"`);
             // Generate Invoice_ID
             const seq = ++projectSequences[projectCode || 'UNKNOWN'];
             const seqStr = seq.toString().padStart(4, '0');
@@ -119,23 +118,23 @@ export default async function handler(req, res) {
             let archivedLink = "";
             let archivedFileId = "";
 
-            // Robustness: If fileId missing from request OR just to be safe, lookup R2 link
+            // Robustness: always fetch DB record to obtain R2 link for fallback
+            // (also fills fileId if request omitted it)
             let dbR2Link = "";
-
-            if (!fileId || fileId.trim() === "") {
-                try {
-                    const { data: recData } = await supabase
-                        .from('invoices')
-                        .select('file_id, file_link, file_link_r2')
-                        .eq('id', recordId)
-                        .single();
-                    if (recData) {
+            try {
+                const { data: recData } = await supabase
+                    .from('invoices')
+                    .select('file_id, file_link, file_link_r2')
+                    .eq('id', recordId)
+                    .single();
+                if (recData) {
+                    if (!fileId || fileId.trim() === "") {
                         fileId = recData.file_id || "";
-                        dbR2Link = recData.file_link_r2 || recData.file_link;
                     }
-                } catch (e) {
-                    console.warn(`[SUBMIT] Failed to lookup record ${recordId}:`, e.message);
+                    dbR2Link = recData.file_link_r2 || recData.file_link || "";
                 }
+            } catch (e) {
+                console.warn(`[SUBMIT] Failed to lookup record ${recordId}:`, e.message);
             }
 
             if (fileId && fileId.trim() !== "") {
@@ -228,10 +227,10 @@ export default async function handler(req, res) {
             };
 
             if (archivedLink) {
-                updateData.archived_file_link = archivedLink;
+                updateData.achieved_file_link = archivedLink; // supabase column name
             }
             if (archivedFileId) {
-                updateData.archived_file_id = archivedFileId;
+                updateData.achieved_file_id = archivedFileId; // supabase column name
             }
 
             const { error: updateErr } = await supabase
