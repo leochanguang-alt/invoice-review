@@ -12,11 +12,22 @@ export default async function handler(req, res) {
             return json(res, 500, { success: false, message: 'Supabase client not initialized' });
         }
 
-        // Fetch data from Supabase invoices table
-        const { data, error } = await supabase
+        // Check if we want only submitted records (for summary page)
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const statusFilter = url.searchParams.get('status');
+
+        // Build query
+        let query = supabase
             .from('invoices')
             .select('*')
             .order('created_at', { ascending: false });
+
+        // Apply status filter if provided
+        if (statusFilter) {
+            query = query.ilike('status', statusFilter);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
             console.error("Supabase Error:", error);

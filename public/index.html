@@ -7,8 +7,9 @@
     <title>BUI Service Expense Management System</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
@@ -28,7 +29,7 @@
     <div class="container" id="main-app" style="display: flex !important;">
         <div class="sidebar">
             <div class="logo">Invoice Review</div>
-            <div class="nav-item active" data-page="summary">Summary</div>
+            <div class="nav-item active" data-page="summary">Dashboard</div>
             <div class="nav-item" data-page="invoice">Review Invoice</div>
             <div class="nav-item" data-page="reconciliation">Reconciliation</div>
             <div class="nav-item" data-page="settings">Settings</div>
@@ -38,19 +39,66 @@
             </div>
         </div>
         <div class="main-content">
-            <h1 id="page-title">Expense Summary</h1>
+            <h1 id="page-title">Dashboard</h1>
             <div id="content-area">
-                <div class="card">
-                    <table id="data-table">
-                        <thead>
-                            <tr id="table-header">
-                                <!-- Headers -->
-                            </tr>
-                        </thead>
-                        <tbody id="table-body">
-                            <!-- Rows -->
-                        </tbody>
-                    </table>
+                <!-- Expense Chart Section -->
+                <div class="summary-section">
+                    <div class="section-header">
+                        <h2>Expense Trend</h2>
+                        <div class="filter-group">
+                            <div class="filter-item">
+                                <label>Company</label>
+                                <select id="filter-company">
+                                    <option value="">All</option>
+                                </select>
+                            </div>
+                            <div class="filter-item">
+                                <label>Project</label>
+                                <select id="filter-project">
+                                    <option value="">All</option>
+                                </select>
+                            </div>
+                            <div class="filter-item">
+                                <label>Category</label>
+                                <select id="filter-category">
+                                    <option value="">All</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="expense-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Expense Detail List Section -->
+                <div class="summary-section">
+                    <div class="section-header">
+                        <h2>Expense Details</h2>
+                        <div class="filter-group">
+                            <div class="filter-item">
+                                <label>Month</label>
+                                <select id="filter-month">
+                                    <option value="">All Months</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="expense-list-container">
+                        <table class="expense-list-table" id="expense-list-table">
+                            <thead>
+                                <tr id="expense-list-header">
+                                    <!-- Headers will be dynamically generated -->
+                                </tr>
+                            </thead>
+                            <tbody id="expense-list-body">
+                                <!-- Rows will be dynamically generated -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="expense-list-summary" id="expense-list-summary">
+                        <!-- Summary stats -->
+                    </div>
                 </div>
             </div>
 

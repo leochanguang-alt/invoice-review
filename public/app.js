@@ -5,7 +5,7 @@ const COLUMNS = [
 ];
 
 const PAGES = {
-    summary: "Expense Summary",
+    summary: "Dashboard",
     invoice: "Review Invoice",
     reconciliation: "Finance Reconciliation",
     settings: "Account Setting"
@@ -13,8 +13,37 @@ const PAGES = {
 
 const navItems = document.querySelectorAll('.nav-item');
 const pageTitle = document.getElementById('page-title');
-const tableHeader = document.getElementById('table-header');
-const tableBody = document.getElementById('table-body');
+
+// Summary page data cache
+let allExpenseData = [];
+let expenseChart = null;
+
+// Chart color palette - Economist style
+const CHART_COLORS = [
+    '#E3120B', // Economist Red
+    '#1A4480', // Navy Blue
+    '#2E8B57', // Sea Green  
+    '#DC7633', // Terracotta
+    '#7D3C98', // Purple
+    '#2874A6', // Steel Blue
+    '#1E8449', // Emerald
+    '#B7950B', // Gold
+    '#5D6D7E', // Slate Gray
+    '#943126', // Dark Red
+    '#117864', // Teal
+    '#AF601A', // Burnt Orange
+    '#6C3461', // Plum
+    '#1B4F72', // Dark Blue
+    '#196F3D', // Forest Green
+];
+
+// Normalize company name (merge NEOSS -> Neoss)
+function normalizeCompany(company) {
+    if (!company) return '';
+    const normalized = company.trim();
+    if (normalized.toUpperCase() === 'NEOSS') return 'Neoss';
+    return normalized;
+}
 
 // Auth Elements
 const loginModal = document.getElementById('login-modal');
@@ -26,7 +55,6 @@ const logoutBtn = document.getElementById('logout-btn');
 
 // Initialize
 async function init() {
-    renderHeaders();
     setupNavigation();
     // setupAuth(); // Auth disabled for now
 
@@ -94,26 +122,13 @@ async function checkAuth() {
 
 function showApp() {
     loginModal.style.display = 'none';
-    mainApp.style.display = 'flex'; // sidebar uses flex layout? wait, container uses flex usually.
-    // Let's check container style in style.css or assume flex is correct for sidebar layout
-    // Actually existing code had <div class="container">...</div>
-    // I should check style.css for .container. 
-    // Assuming 'flex' based on sidebar/main-content structure.
-    // If not, 'block' might break layout. 
-    // SAFEST is to remove 'display: none' then add class if needed, or just set to 'flex' if I am sure.
-    // Let's look at index.html again.. <div class="container">
-    // Usually sidebars are flex.
     mainApp.style.display = 'flex';
-    loadMockData(); // Initially load mock data or real data
+    loadSummaryPage(); // Load summary page on app start
 }
 
 function showLogin() {
     mainApp.style.display = 'none';
     loginModal.style.display = 'flex';
-}
-
-function renderHeaders() {
-    tableHeader.innerHTML = COLUMNS.map(col => `<th>${col}</th>`).join('');
 }
 
 function setupNavigation() {
@@ -134,7 +149,7 @@ function setupNavigation() {
 
             if (page === 'summary') {
                 document.getElementById('content-area').style.display = 'block';
-                loadMockData();
+                loadSummaryPage();
             } else if (page === 'settings') {
                 showSettingsPage();
             } else if (page === 'invoice') {
@@ -144,82 +159,461 @@ function setupNavigation() {
     });
 }
 
-async function loadMockData() {
-    tableBody.innerHTML = '<tr><td colspan="' + COLUMNS.length + '" style="text-align:center">Loading data...</td></tr>';
+// ============ SUMMARY PAGE FUNCTIONS ============
 
-    // Attempt real API call
+async function loadSummaryPage() {
     try {
-        const res = await fetch('/api/expenses');
-
-        if (res.status === 401) {
-            // Token expired or invalid
-            showLogin();
-            return;
-        }
-
+        // Load only submitted expense data
+        const res = await fetch('/api/expenses?status=submitted');
         const json = await res.json();
+        
         if (json.success && json.data) {
-            renderRows(json.data);
-        } else {
-            showMockData();
+            // Normalize company names (merge NEOSS -> Neoss)
+            allExpenseData = json.data.map(item => ({
+                ...item,
+                'Charge to Company': normalizeCompany(item['Charge to Company'])
+            }));
+            
+            // Populate filters
+            populateFilters();
+            
+            // Setup filter event listeners
+            setupFilterListeners();
+            
+            // Render chart and list
+            renderExpenseChart();
+            renderExpenseList();
         }
     } catch (e) {
-        console.error("Fetch error, using mock data", e);
-        showMockData();
+        console.error('Failed to load summary data:', e);
     }
 }
 
-function renderRows(data) {
-    if (data.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="' + COLUMNS.length + '" style="text-align:center">No records found.</td></tr>';
+function populateFilters() {
+    // Get unique companies (normalized)
+    const companies = [...new Set(allExpenseData.map(d => d['Charge to Company']).filter(Boolean))].sort();
+    
+    // Get unique categories
+    const categories = [...new Set(allExpenseData.map(d => d['Category']).filter(Boolean))].sort();
+    
+    // Get unique projects
+    const projects = [...new Set(allExpenseData.map(d => d['Charge to Project']).filter(Boolean))].sort();
+    
+    // Get unique months
+    const months = [...new Set(allExpenseData.map(d => {
+        const date = d['Invoice Date'];
+        if (!date) return null;
+        const dateObj = new Date(date);
+        if (isNaN(dateObj.getTime())) return null;
+        return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+    }).filter(Boolean))].sort().reverse();
+    
+    // Populate company filter
+    const companyFilter = document.getElementById('filter-company');
+    companyFilter.innerHTML = '<option value="">All</option>' + 
+        companies.map(c => `<option value="${c}">${c}</option>`).join('');
+    
+    // Populate project filter
+    const projectFilter = document.getElementById('filter-project');
+    projectFilter.innerHTML = '<option value="">All</option>' + 
+        projects.map(p => `<option value="${p}">${p}</option>`).join('');
+    
+    // Populate category filter
+    const categoryFilter = document.getElementById('filter-category');
+    categoryFilter.innerHTML = '<option value="">All</option>' + 
+        categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    
+    // Populate month filter
+    const monthFilter = document.getElementById('filter-month');
+    monthFilter.innerHTML = '<option value="">All Months</option>' + 
+        months.map(m => {
+            const [year, month] = m.split('-');
+            return `<option value="${m}">${year}/${month}</option>`;
+        }).join('');
+}
+
+function setupFilterListeners() {
+    // Main filters affect both chart and list
+    document.getElementById('filter-company').addEventListener('change', () => {
+        updateDependentFilters();
+        renderExpenseChart();
+        renderExpenseList();
+    });
+    
+    document.getElementById('filter-project').addEventListener('change', () => {
+        renderExpenseChart();
+        renderExpenseList();
+    });
+    
+    document.getElementById('filter-category').addEventListener('change', () => {
+        renderExpenseChart();
+        renderExpenseList();
+    });
+    
+    // Month filter only affects the list
+    document.getElementById('filter-month').addEventListener('change', renderExpenseList);
+}
+
+function updateDependentFilters() {
+    const selectedCompany = document.getElementById('filter-company').value;
+    
+    // Filter data based on company selection
+    let filteredData = allExpenseData;
+    if (selectedCompany) {
+        filteredData = allExpenseData.filter(d => d['Charge to Company'] === selectedCompany);
+    }
+    
+    // Update project filter options
+    const projects = [...new Set(filteredData.map(d => d['Charge to Project']).filter(Boolean))].sort();
+    const projectFilter = document.getElementById('filter-project');
+    const currentProject = projectFilter.value;
+    projectFilter.innerHTML = '<option value="">All</option>' + 
+        projects.map(p => `<option value="${p}" ${p === currentProject ? 'selected' : ''}>${p}</option>`).join('');
+    
+    // Update category filter options
+    const categories = [...new Set(filteredData.map(d => d['Category']).filter(Boolean))].sort();
+    const categoryFilter = document.getElementById('filter-category');
+    const currentCategory = categoryFilter.value;
+    categoryFilter.innerHTML = '<option value="">All</option>' + 
+        categories.map(c => `<option value="${c}" ${c === currentCategory ? 'selected' : ''}>${c}</option>`).join('');
+}
+
+function getFilteredData() {
+    const selectedCompany = document.getElementById('filter-company').value;
+    const selectedProject = document.getElementById('filter-project').value;
+    const selectedCategory = document.getElementById('filter-category').value;
+    
+    let filteredData = allExpenseData;
+    
+    if (selectedCompany) {
+        filteredData = filteredData.filter(d => d['Charge to Company'] === selectedCompany);
+    }
+    if (selectedProject) {
+        filteredData = filteredData.filter(d => d['Charge to Project'] === selectedProject);
+    }
+    if (selectedCategory) {
+        filteredData = filteredData.filter(d => d['Category'] === selectedCategory);
+    }
+    
+    return filteredData;
+}
+
+function renderExpenseChart() {
+    const filteredData = getFilteredData();
+    
+    // Group by month
+    const monthlyData = {};
+    const breakdownData = {}; // For stacking by category/project
+    
+    const selectedCompany = document.getElementById('filter-company').value;
+    const selectedProject = document.getElementById('filter-project').value;
+    const selectedCategory = document.getElementById('filter-category').value;
+    
+    // Determine breakdown dimension
+    let breakdownKey = 'Category';
+    if (selectedCategory && !selectedProject) {
+        breakdownKey = 'Charge to Project';
+    }
+    
+    filteredData.forEach(item => {
+        const date = item['Invoice Date'];
+        if (!date) return;
+        
+        const amount = parseFloat((item['Amount(HKD)'] || '0').toString().replace(/,/g, '')) || 0;
+        const breakdownValue = item[breakdownKey] || 'Other';
+        
+        const dateObj = new Date(date);
+        if (isNaN(dateObj.getTime())) return;
+        
+        const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = 0;
+        }
+        monthlyData[monthKey] += amount;
+        
+        if (!breakdownData[monthKey]) {
+            breakdownData[monthKey] = {};
+        }
+        if (!breakdownData[monthKey][breakdownValue]) {
+            breakdownData[monthKey][breakdownValue] = 0;
+        }
+        breakdownData[monthKey][breakdownValue] += amount;
+    });
+    
+    // Sort months
+    const sortedMonths = Object.keys(monthlyData).sort();
+    
+    // Prepare chart data
+    const labels = sortedMonths.map(m => {
+        const [year, month] = m.split('-');
+        return `${year}/${month}`;
+    });
+    
+    // Get all breakdown values
+    const allBreakdownValues = [...new Set(
+        Object.values(breakdownData).flatMap(obj => Object.keys(obj))
+    )].sort();
+    
+    let datasets;
+    
+    if (allBreakdownValues.length <= 1 || (selectedProject && selectedCategory)) {
+        // Single dimension - simple bar
+        datasets = [{
+            label: 'Total Expenses',
+            data: sortedMonths.map(m => monthlyData[m] || 0),
+            backgroundColor: CHART_COLORS[0],
+            borderColor: CHART_COLORS[0],
+            borderWidth: 0,
+            borderRadius: 6,
+            borderSkipped: false
+        }];
+    } else {
+        // Multiple dimensions - stacked bar
+        datasets = allBreakdownValues.map((val, idx) => ({
+            label: val,
+            data: sortedMonths.map(m => (breakdownData[m] && breakdownData[m][val]) || 0),
+            backgroundColor: CHART_COLORS[idx % CHART_COLORS.length],
+            borderColor: CHART_COLORS[idx % CHART_COLORS.length],
+            borderWidth: 0,
+            borderRadius: 4,
+            borderSkipped: false
+        }));
+    }
+    
+    // Destroy existing chart
+    if (expenseChart) {
+        expenseChart.destroy();
+    }
+    
+    // Create chart
+    const ctx = document.getElementById('expense-chart').getContext('2d');
+    expenseChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: datasets.length > 1,
+                    position: 'bottom',
+                    labels: {
+                        color: '#4B5563',
+                        font: {
+                            family: "'Source Sans 3', sans-serif",
+                            size: 11
+                        },
+                        padding: 12,
+                        usePointStyle: true,
+                        pointStyle: 'rect'
+                    }
+                },
+                tooltip: {
+                    backgroundColor: '#FFFFFF',
+                    titleColor: '#111827',
+                    bodyColor: '#374151',
+                    borderColor: '#E5E7EB',
+                    borderWidth: 1,
+                    padding: 10,
+                    cornerRadius: 4,
+                    mode: 'index',
+                    titleFont: {
+                        family: "'Source Sans 3', sans-serif",
+                        size: 12,
+                        weight: 600
+                    },
+                    bodyFont: {
+                        family: "Verdana, Geneva, sans-serif",
+                        size: 11
+                    },
+                    callbacks: {
+                        label: function(context) {
+                            return null; // 不显示分组数值
+                        },
+                        afterBody: function(tooltipItems) {
+                            // 计算并显示汇总数值
+                            let total = 0;
+                            tooltipItems.forEach(item => {
+                                total += item.raw || 0;
+                            });
+                            return `Total: HKD ${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: datasets.length > 1,
+                    grid: {
+                        color: '#F3F4F6',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#6B7280',
+                        font: {
+                            family: "'Source Sans 3', sans-serif",
+                            size: 11
+                        }
+                    }
+                },
+                y: {
+                    stacked: datasets.length > 1,
+                    beginAtZero: true,
+                    grid: {
+                        color: '#F3F4F6',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#6B7280',
+                        font: {
+                            family: "Verdana, Geneva, sans-serif",
+                            size: 10
+                        },
+                        callback: function(value) {
+                            if (value >= 1000) {
+                                return 'HKD ' + (value / 1000).toLocaleString() + 'K';
+                            }
+                            return 'HKD ' + value.toLocaleString();
+                        }
+                    }
+                }
+            },
+            layout: {
+                padding: {
+                    left: 10
+                }
+            }
+        }
+    });
+}
+
+function renderExpenseList() {
+    const filteredData = getFilteredData();
+    const selectedMonth = document.getElementById('filter-month').value;
+    
+    // Apply month filter for list only
+    let listData = filteredData;
+    if (selectedMonth) {
+        listData = filteredData.filter(item => {
+            const date = item['Invoice Date'];
+            if (!date) return false;
+            const dateObj = new Date(date);
+            if (isNaN(dateObj.getTime())) return false;
+            const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+            return monthKey === selectedMonth;
+        });
+    }
+    
+    const headerEl = document.getElementById('expense-list-header');
+    const bodyEl = document.getElementById('expense-list-body');
+    const summaryEl = document.getElementById('expense-list-summary');
+    
+    if (listData.length === 0) {
+        headerEl.innerHTML = '<th>No Data</th>';
+        bodyEl.innerHTML = '<tr><td class="empty-state"><div class="empty-state-icon">📊</div>No expense records found for the selected filters.</td></tr>';
+        summaryEl.innerHTML = '';
         return;
     }
-    tableBody.innerHTML = data.map(row => `
-        <tr>
-            ${COLUMNS.map(col => {
-        const val = row[col] || '';
-        if (col === 'Status') {
-            const cls = val.toLowerCase().includes('waiting') ? 'status-waiting' : val.toLowerCase().includes('confirmed') ? 'status-confirmed' : '';
-            return `<td><span class="status-badge ${cls}">${val}</span></td>`;
+    
+    // Group data by "Company-Project-Category" combination
+    const groupedData = {};
+    let totalAmount = 0;
+    
+    listData.forEach(item => {
+        const company = item['Charge to Company'] || 'Unknown';
+        const project = item['Charge to Project'] || 'Unknown';
+        const category = item['Category'] || 'Unknown';
+        const groupKey = `${company}-${project}-${category}`;
+        
+        const amount = parseFloat((item['Amount(HKD)'] || '0').toString().replace(/,/g, '')) || 0;
+        totalAmount += amount;
+        
+        if (!groupedData[groupKey]) {
+            groupedData[groupKey] = {
+                company,
+                project,
+                category,
+                items: [],
+                total: 0
+            };
         }
-        return `<td>${val}</td>`;
-    }).join('')}
-        </tr>
-    `).join('');
-}
-
-function showMockData() {
-    const mockData = [
-        {
-            "Invoice Date": "2023-12-01",
-            "Vender": "AWS",
-            "Amount": "100.00",
-            "Currency": "USD",
-            "Amount(HKD)": "780.00",
-            "Country": "USA",
-            "Category": "Cloud Services",
-            "Status": "Confirmed",
-            "Charge to Company": "BUI HK",
-            "Charge to Project": "Internal",
-            "Owner": "John Doe",
-            "Invoice ID": "INV-001"
-        },
-        {
-            "Invoice Date": "2023-12-05",
-            "Vender": "Starbucks",
-            "Amount": "50.00",
-            "Currency": "HKD",
-            "Amount(HKD)": "50.00",
-            "Country": "HK",
-            "Category": "F&B",
-            "Status": "Waiting for Confirm",
-            "Charge to Company": "BUI HK",
-            "Charge to Project": "Client-X",
-            "Owner": "Jane Smith",
-            "Invoice ID": "INV-002"
-        }
-    ];
-    renderRows(mockData);
+        
+        groupedData[groupKey].items.push({
+            date: item['Invoice Date'],
+            vendor: item['Vender'] || item['Vendor'] || '',
+            amount: amount,
+            currency: item['Currency'] || 'HKD',
+            originalAmount: item['Amount'] || ''
+        });
+        groupedData[groupKey].total += amount;
+    });
+    
+    // Sort groups by total amount descending
+    const sortedGroups = Object.entries(groupedData)
+        .sort((a, b) => b[1].total - a[1].total);
+    
+    // Build table header
+    headerEl.innerHTML = `
+        <th style="width: 100px;">Date</th>
+        <th>Vendor</th>
+        <th style="width: 100px; text-align: right;">Original</th>
+        <th style="width: 120px; text-align: right;">Amount (HKD)</th>
+    `;
+    
+    // Build table body with grouped rows
+    let bodyHtml = '';
+    
+    sortedGroups.forEach(([groupKey, group]) => {
+        // Group header row - format: Company-Project-Category
+        bodyHtml += `
+            <tr class="header-group">
+                <td colspan="4">
+                    <span class="group-title">${group.company}-${group.project}-${group.category}</span>
+                    <span style="float: right; font-family: 'JetBrains Mono', monospace;">
+                        HKD ${group.total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </span>
+                </td>
+            </tr>
+        `;
+        
+        // Sort items by date descending
+        const sortedItems = group.items.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        // Detail rows
+        sortedItems.forEach(item => {
+            const dateStr = item.date ? new Date(item.date).toLocaleDateString('en-CA') : '-';
+            bodyHtml += `
+                <tr>
+                    <td class="date-cell">${dateStr}</td>
+                    <td>${item.vendor}</td>
+                    <td style="text-align: right; color: var(--text-muted);">${item.originalAmount} ${item.currency}</td>
+                    <td class="amount-cell">${item.amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                </tr>
+            `;
+        });
+    });
+    
+    bodyEl.innerHTML = bodyHtml;
+    
+    // Summary
+    summaryEl.innerHTML = `
+        <div class="summary-item">
+            <span class="summary-label">Total Records</span>
+            <span class="summary-value">${listData.length}</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">Groups</span>
+            <span class="summary-value">${sortedGroups.length}</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">Total Amount</span>
+            <span class="summary-value">HKD ${totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+        </div>
+    `;
 }
 
 init();
@@ -668,7 +1062,7 @@ let ratesList = [];
 const REVIEW_DISPLAY_FIELDS = [
     'Invoice Date', 'Vender', 'Amount', 'Currency', 'Amount(HKD)',
     'Country', 'Category', 'Owner',
-    'Charge to Project', 'Charge to Company'
+    'Charge to Company', 'Charge to Project'
 ];
 
 const EDITABLE_FIELDS = ['Charge to Company', 'Charge to Project'];
