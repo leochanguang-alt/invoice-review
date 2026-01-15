@@ -58,6 +58,8 @@ async function syncFolderToR2(folderId, r2Prefix) {
             q: `'${folderId}' in parents and trashed = false`,
             fields: "nextPageToken, files(id, name, mimeType, modifiedTime)",
             pageToken: pageToken,
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true,
         });
 
         for (const file of res.data.files) {
