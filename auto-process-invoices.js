@@ -154,7 +154,7 @@ async function processInvoices() {
             // We check file_ID_HASH_R2. We can also check file_id for legacy compatibility if needed.
             let query = supabase
                 .from('invoices')
-                .select('id')
+                .select('id,vendor,amount,currency,invoice_date,invoice_number,location_city,country,category,status')
                 .or(`file_ID_HASH_R2.eq.${fileHash},file_ID_HASH_R2.eq.${file.etag}`)
                 .maybeSingle();
 
@@ -166,8 +166,17 @@ async function processInvoices() {
             }
 
             if (existing) {
-                console.log(`File already processed (hash: ${fileHash}, etag: ${file.etag}). Skipping.`);
-                continue;
+                const hasParsedData =
+                    (existing.vendor && existing.vendor.trim() !== '') ||
+                    (existing.invoice_date && existing.invoice_date.trim() !== '') ||
+                    (existing.invoice_number && existing.invoice_number.trim() !== '') ||
+                    (existing.amount !== null && existing.amount !== undefined && existing.amount !== '');
+                if (hasParsedData) {
+                    console.log(`File already processed with data (hash: ${fileHash}, etag: ${file.etag}). Skipping.`);
+                    continue;
+                } else {
+                    console.log(`Existing record lacks parsed fields; will reprocess and update. id=${existing.id}`);
+                }
             }
 
             try {
@@ -243,24 +252,45 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
 
                 console.log('Processed Data:', JSON.stringify(processedData, null, 2));
 
-                // 5. Insert into Supabase
-                console.log('Inserting into Supabase...');
-                const { data: insertResult, error: insertError } = await supabase
-                    .from('invoices')
-                    .insert([processedData])
-                    .select();
+                // 5. Insert or update Supabase
+                if (existing) {
+                    console.log(`Updating existing record id=${existing.id}...`);
+                    const { error: updateError } = await supabase
+                        .from('invoices')
+                        .update(processedData)
+                        .eq('id', existing.id);
 
-                if (insertError) {
-                    console.error('Error inserting into Supabase:', {
-                        message: insertError.message,
-                        details: insertError.details,
-                        hint: insertError.hint,
-                        code: insertError.code
-                    });
-                    writeLog(`INSERT ERROR: ${file.name} - ${insertError.message}`);
+                    if (updateError) {
+                        console.error('Error updating Supabase:', {
+                            message: updateError.message,
+                            details: updateError.details,
+                            hint: updateError.hint,
+                            code: updateError.code
+                        });
+                        writeLog(`UPDATE ERROR: ${file.name} - ${updateError.message}`);
+                    } else {
+                        console.log('✅ Successfully updated Supabase. ID:', existing.id);
+                        writeLog(`UPDATED RECORD: ID=${existing.id} | File=${file.name} | Vendor=${processedData.vendor} | Amount=${processedData.amount} ${processedData.currency}`);
+                    }
                 } else {
-                    console.log('✅ Successfully saved to Supabase. ID:', insertResult?.[0]?.id);
-                    writeLog(`NEW RECORD: ID=${insertResult?.[0]?.id} | File=${file.name} | Vendor=${processedData.vendor} | Amount=${processedData.amount} ${processedData.currency}`);
+                    console.log('Inserting into Supabase...');
+                    const { data: insertResult, error: insertError } = await supabase
+                        .from('invoices')
+                        .insert([processedData])
+                        .select();
+
+                    if (insertError) {
+                        console.error('Error inserting into Supabase:', {
+                            message: insertError.message,
+                            details: insertError.details,
+                            hint: insertError.hint,
+                            code: insertError.code
+                        });
+                        writeLog(`INSERT ERROR: ${file.name} - ${insertError.message}`);
+                    } else {
+                        console.log('✅ Successfully saved to Supabase. ID:', insertResult?.[0]?.id);
+                        writeLog(`NEW RECORD: ID=${insertResult?.[0]?.id} | File=${file.name} | Vendor=${processedData.vendor} | Amount=${processedData.amount} ${processedData.currency}`);
+                    }
                 }
             } catch (fileErr) {
                 console.error(`Error processing file ${file.name}:`, fileErr.message || fileErr);
