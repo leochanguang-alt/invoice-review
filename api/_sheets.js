@@ -3,14 +3,10 @@ import { google } from "googleapis";
 function cleanEnv(v) {
   if (!v) return "";
   v = v.trim();
-  // Remove surrounding quotes
-  if (v.startsWith('"') && v.endsWith('"')) {
-    v = v.substring(1, v.length - 1);
-  } else if (v.startsWith("'") && v.endsWith("'")) {
-    v = v.substring(1, v.length - 1);
+  // 递归移除首尾的单引号或双引号
+  while ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.substring(1, v.length - 1).trim();
   }
-  // Remove literal \n sequences at the end from shell copy-paste errors
-  v = v.replace(/\\n$/, '');
   return v;
 }
 
@@ -69,7 +65,18 @@ export function getDriveAuth() {
     throw new Error("Missing auth env: Need OAuth2 (GOOGLE_REFRESH_TOKEN) OR Service Account (GOOGLE_SERVICE_ACCOUNT_EMAIL)");
   }
 
+  // 增强私钥清洗逻辑
+  // 1. 处理转义换行符
   key = key.replace(/\\n/g, "\n");
+  // 2. 如果私钥被不小心包含在了 JSON 结构中或有多余空格，确保只提取 PEM 部分
+  if (key.includes("-----BEGIN PRIVATE KEY-----")) {
+    key = key.substring(key.indexOf("-----BEGIN PRIVATE KEY-----"));
+  }
+  if (key.includes("-----END PRIVATE KEY-----")) {
+    key = key.substring(0, key.indexOf("-----END PRIVATE KEY-----") + 25);
+  }
+  // 3. 移除每行首尾可能存在的空格（有时从网页复制会带上）
+  key = key.split('\n').map(line => line.trim()).join('\n');
 
   return new google.auth.JWT({
     email,
