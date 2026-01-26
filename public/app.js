@@ -1306,11 +1306,14 @@ function renderReviewRecords() {
                 </tr>
             `;
         } else {
-            // Review/Modify tabs: review button
+            // Review/Modify tabs: review and delete buttons
             return `
                 <tr class="review-row ${isReviewed ? 'reviewed' : ''} ${isSelected ? 'selected' : ''}" 
                     data-row="${rowNum}" data-idx="${idx}">
-                    <td><button class="review-btn" data-row="${rowNum}">Review</button></td>
+                    <td style="white-space: nowrap;">
+                        <button class="review-btn" data-row="${rowNum}">Review</button>
+                        <button class="delete-btn" data-row="${rowNum}" style="background: #666; margin-left: 5px;">Delete</button>
+                    </td>
                     ${cells}
                 </tr>
             `;
@@ -1331,6 +1334,9 @@ function renderReviewRecords() {
                 if (e.target.classList.contains('review-btn')) {
                     const rowNum = parseInt(e.target.dataset.row);
                     toggleReviewed(rowNum);
+                } else if (e.target.classList.contains('delete-btn')) {
+                    const rowNum = parseInt(e.target.dataset.row);
+                    deleteInvoiceRecord(rowNum);
                 } else {
                     const idx = parseInt(row.dataset.idx);
                     selectRecord(idx);
@@ -1347,6 +1353,55 @@ function toggleReviewed(rowNum) {
         reviewedRows.add(rowNum);
     }
     renderReviewRecords();
+}
+
+async function deleteInvoiceRecord(rowNum) {
+    const record = reviewRecords.find(r => r._rowNumber === rowNum);
+    const vendor = record ? record['Vender'] : 'Unknown';
+    const amount = record ? record['Amount'] : '0';
+    const currency = record ? record['Currency'] : '';
+
+    const confirmed = confirm(`Are you sure you want to delete this record?\n\nVendor: ${vendor}\nAmount: ${amount} ${currency}\n\nThis will permanently delete the record from the database, R2 storage, and Google Drive.`);
+    
+    if (!confirmed) return;
+
+    try {
+        // Show a simple loading state if needed, or just disable the button
+        const btn = document.querySelector(`.delete-btn[data-row="${rowNum}"]`);
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = 'Deleting...';
+        }
+
+        const res = await fetch('/api/delete-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rowNumber: rowNum })
+        });
+
+        const json = await res.json();
+
+        if (json.success) {
+            alert('Record deleted successfully from all sources.');
+            // Refresh the list
+            await loadReviewRecords();
+            // Clear detail panel if the deleted record was selected
+            if (selectedRecordRow === rowNum) {
+                selectedRecordRow = null;
+                document.getElementById('review-detail-form').innerHTML = '<h3>Invoice Details</h3><p style="color: #888;">Select a record from the left to view details</p>';
+                document.getElementById('attachment-container').innerHTML = '<p style="color: #888;">No attachment available</p>';
+            }
+        } else {
+            alert('Failed to delete record: ' + json.message);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = 'Delete';
+            }
+        }
+    } catch (e) {
+        console.error('Delete error:', e);
+        alert('An error occurred while deleting the record.');
+    }
 }
 
 // Submit tab functions
