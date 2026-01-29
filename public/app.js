@@ -1312,7 +1312,7 @@ function renderReviewRecords() {
                     data-row="${rowNum}" data-idx="${idx}">
                     <td style="white-space: nowrap;">
                         <button class="review-btn" data-row="${rowNum}">Review</button>
-                        <button class="delete-btn" data-row="${rowNum}" style="background: #666; margin-left: 5px;">Delete</button>
+                        <button class="delete-btn" data-row="${rowNum}">Delete</button>
                     </td>
                     ${cells}
                 </tr>

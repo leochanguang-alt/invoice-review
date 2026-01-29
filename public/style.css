@@ -1261,3 +1261,20 @@ tr:hover td {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-light);
 }
+
+.delete-btn {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: var(--gray-500);
+  color: white;
+  margin-left: 5px;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.delete-btn:hover {
+  background: var(--gray-600);
+}
