@@ -1,3 +1,5 @@
+# 若出现 "Internal server error" 或 "job was not acquired by Runner of type hosted"，
+# 多为 GitHub 临时故障，请稍后从 Actions 页手动 Re-run 即可。
 name: Auto Invoice Cloud Watcher
 
 on:
@@ -5,9 +7,14 @@ on:
     - cron: '*/15 * * * *' # Every 15 minutes
   workflow_dispatch:      # Allow manual trigger
 
+concurrency:
+  group: process-invoices
+  cancel-in-progress: true
+
 jobs:
   process-invoices:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { supabase } from './api/_supabase.js';
+import { getCurrencyList, linkCurrencyCountry } from './api/currency-country-link.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // R2 Configuration
@@ -143,6 +144,7 @@ async function processInvoices() {
         console.log(`Found ${allFiles.length} PDF/image files in R2. Filtering to last ${DAYS_BACK} days => ${filtered.length}`);
 
         const filesToProcess = filtered;
+        const currencyList = await getCurrencyList(supabase);
 
         for (const file of filesToProcess) {
             console.log(`\nProcessing file: ${file.name} (${file.key})`);
@@ -249,6 +251,8 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
                     // file_link: // Legacy column, stop populating or keep for backward compat? User said move to _r2.
                     status: 'Waiting for Confirm'
                 };
+
+                linkCurrencyCountry(processedData, currencyList);
 
                 console.log('Processed Data:', JSON.stringify(processedData, null, 2));
 

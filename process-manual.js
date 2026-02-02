@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { google } from 'googleapis';
 import { getDriveAuth, getSheetsClient, SHEET_ID, norm } from './api/_sheets.js';
 import { supabase } from './api/_supabase.js';
+import { getCurrencyList, linkCurrencyCountry } from './api/currency-country-link.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const GENAI_MODEL = 'gemini-3-flash-preview';
@@ -121,6 +122,9 @@ category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/
             file_link: file.webViewLink,
             status: 'Waiting for Confirm'
         };
+
+        const currencyList = await getCurrencyList(supabase);
+        linkCurrencyCountry(processedData, currencyList);
 
         console.log('Inserting into Supabase:', JSON.stringify(processedData, null, 2));
 
