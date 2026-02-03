@@ -197,6 +197,108 @@ export default async function handler(req, res) {
         } else if (req.method === "POST") {
             const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
             const { action, sheet: tableKey, rowNumber, data } = body;
+
+            // === FIX PROJECT FOLDERS ACTION ===
+            if (action === "fix-folders") {
+                if (!r2) {
+                    return json(res, 500, { success: false, message: "R2 client not configured" });
+                }
+
+                const { project_id, force_all } = body;
+
+                let query = supabase
+                    .from('projects')
+                    .select('project_id, project_code, project_name, drive_folder_link');
+
+                if (project_id) {
+                    query = query.eq('project_id', project_id);
+                } else if (!force_all) {
+                    query = query.or('drive_folder_link.is.null,drive_folder_link.eq.');
+                }
+
+                const { data: projects, error } = await query;
+
+                if (error) {
+                    return json(res, 500, { success: false, message: error.message });
+                }
+
+                if (!projects || projects.length === 0) {
+                    return json(res, 200, { success: true, message: "No projects need fixing", fixed: 0 });
+                }
+
+                const results = [];
+                let fixed = 0;
+                let errors = 0;
+
+                for (const project of projects) {
+                    const folderName = project.project_code || project.project_name;
+                    
+                    if (!folderName) {
+                        results.push({ project_id: project.project_id, status: 'skipped', reason: 'No project code or name' });
+                        continue;
+                    }
+
+                    try {
+                        const folderLink = await createR2ProjectFolder(folderName);
+                        
+                        if (folderLink) {
+                            const { error: updateErr } = await supabase
+                                .from('projects')
+                                .update({ drive_folder_link: folderLink })
+                                .eq('project_id', project.project_id);
+
+                            if (updateErr) {
+                                results.push({ project_id: project.project_id, project_code: folderName, status: 'error', reason: updateErr.message });
+                                errors++;
+                            } else {
+                                results.push({ project_id: project.project_id, project_code: folderName, status: 'fixed', drive_folder_link: folderLink });
+                                fixed++;
+                            }
+                        }
+                    } catch (err) {
+                        results.push({ project_id: project.project_id, project_code: folderName, status: 'error', reason: err.message });
+                        errors++;
+                    }
+                }
+
+                return json(res, 200, { 
+                    success: true, 
+                    message: `Fixed ${fixed} project(s), ${errors} error(s)`,
+                    fixed,
+                    errors,
+                    results
+                });
+            }
+
+            // === CHECK PROJECT FOLDERS ACTION ===
+            if (action === "check-folders") {
+                const { data: projects, error } = await supabase
+                    .from('projects')
+                    .select('project_id, project_code, project_name, drive_folder_link')
+                    .order('project_code');
+
+                if (error) {
+                    return json(res, 500, { success: false, message: error.message });
+                }
+
+                const results = (projects || []).map(project => ({
+                    project_id: project.project_id,
+                    project_code: project.project_code,
+                    project_name: project.project_name,
+                    has_folder_link: !!project.drive_folder_link,
+                    drive_folder_link: project.drive_folder_link || null
+                }));
+
+                const missing = results.filter(r => !r.has_folder_link);
+                
+                return json(res, 200, { 
+                    success: true, 
+                    total: results.length,
+                    missing_count: missing.length,
+                    projects: results
+                });
+            }
+
             const tableName = TABLE_MAP[tableKey];
 
             if (!tableName) {

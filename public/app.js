@@ -84,10 +84,10 @@ function setupAuth() {
         loginError.textContent = '';
         
         try {
-            const res = await fetch('/api/login', {
+            const res = await fetch('/api/auth', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
+                body: JSON.stringify({ action: 'login', email, password })
             });
             const data = await res.json();
             
@@ -125,10 +125,10 @@ function setupAuth() {
         successEl.style.display = 'none';
         
         try {
-            const res = await fetch('/api/reset-password', {
+            const res = await fetch('/api/auth', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
+                body: JSON.stringify({ action: 'reset-password', email })
             });
             const data = await res.json();
             
@@ -186,10 +186,11 @@ function setupAuth() {
         }
         
         try {
-            const res = await fetch('/api/change-password', {
+            const res = await fetch('/api/auth', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    action: 'change-password',
                     owner_id: currentUser.owner_id,
                     current_password: currentPassword,
                     new_password: newPassword
@@ -1215,7 +1216,11 @@ async function fixMissingFolders() {
         btn.innerText = '检查中...';
 
         // First, check status
-        const checkRes = await fetch('/api/fix-project-folders');
+        const checkRes = await fetch('/api/manage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'check-folders' })
+        });
         const checkJson = await checkRes.json();
 
         if (!checkJson.success) {
@@ -1234,10 +1239,10 @@ async function fixMissingFolders() {
         btn.innerText = '修复中...';
 
         // Fix missing folders
-        const fixRes = await fetch('/api/fix-project-folders', {
+        const fixRes = await fetch('/api/manage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+            body: JSON.stringify({ action: 'fix-folders', force_all: true })
         });
         const fixJson = await fixRes.json();
 
