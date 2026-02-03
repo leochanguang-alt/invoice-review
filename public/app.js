@@ -660,6 +660,9 @@ function setupSettingsEvents() {
         showEditModal("添加记录");
     };
 
+    // Fix folders button (only for projects)
+    document.getElementById('fix-folders-btn').onclick = fixMissingFolders;
+
     // Cancel edit
     document.getElementById('cancel-edit').onclick = () => {
         document.getElementById('edit-modal').style.display = 'none';
@@ -676,6 +679,12 @@ async function loadManageView() {
     document.querySelector('.settings-cards').style.display = 'none';
     document.getElementById('manage-view').style.display = 'block';
     document.getElementById('manage-title').innerText = SHEET_TITLES[currentSheet];
+
+    // Show/hide fix folders button based on current sheet
+    const fixFoldersBtn = document.getElementById('fix-folders-btn');
+    if (fixFoldersBtn) {
+        fixFoldersBtn.style.display = currentSheet === 'projects' ? 'block' : 'none';
+    }
 
     // Load data from API
     try {
@@ -1046,6 +1055,57 @@ async function deleteRow(rowNumber) {
     } catch (e) {
         console.error(e);
         alert("删除失败");
+    }
+}
+
+// Fix missing R2 folders for projects
+async function fixMissingFolders() {
+    const btn = document.getElementById('fix-folders-btn');
+    const originalText = btn.innerText;
+    
+    try {
+        btn.disabled = true;
+        btn.innerText = '检查中...';
+
+        // First, check status
+        const checkRes = await fetch('/api/fix-project-folders');
+        const checkJson = await checkRes.json();
+
+        if (!checkJson.success) {
+            alert('检查失败: ' + checkJson.message);
+            return;
+        }
+
+        if (checkJson.missing_count === 0) {
+            alert('所有项目都已有文件夹链接！');
+            return;
+        }
+
+        const confirmed = confirm(`发现 ${checkJson.missing_count} 个项目缺少文件夹链接。\n是否立即修复？`);
+        if (!confirmed) return;
+
+        btn.innerText = '修复中...';
+
+        // Fix missing folders
+        const fixRes = await fetch('/api/fix-project-folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const fixJson = await fixRes.json();
+
+        if (fixJson.success) {
+            alert(`修复完成！\n成功: ${fixJson.fixed} 个\n失败: ${fixJson.errors} 个`);
+            await loadManageView(); // Reload to show updated data
+        } else {
+            alert('修复失败: ' + fixJson.message);
+        }
+    } catch (e) {
+        console.error('Fix folders error:', e);
+        alert('修复失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerText = originalText;
     }
 }
 

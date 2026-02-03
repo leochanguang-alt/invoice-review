@@ -1,4 +1,4 @@
-import { supabase } from "./_supabase.js";
+import { supabase } from "../lib/_supabase.js";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // Table name mapping
@@ -11,17 +11,57 @@ const TABLE_MAP = {
 };
 
 // R2 Configuration for project folder creation
-const r2 = new S3Client({
-    region: "auto",
-    endpoint: process.env.R2_ENDPOINT,
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-    },
-});
-
+const R2_ENDPOINT = process.env.R2_ENDPOINT;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://pub-${process.env.R2_ACCOUNT_ID}.r2.dev`;
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/+$/, ''); // Remove trailing slashes
+
+// Only create R2 client if all credentials are present
+const r2 = (R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY) ? new S3Client({
+    region: "auto",
+    endpoint: R2_ENDPOINT,
+    credentials: {
+        accessKeyId: R2_ACCESS_KEY_ID,
+        secretAccessKey: R2_SECRET_ACCESS_KEY,
+    },
+}) : null;
+
+// Helper function to create R2 project folder
+async function createR2ProjectFolder(folderName) {
+    if (!r2 || !BUCKET_NAME) {
+        console.warn("[MANAGE] R2 client not configured, skipping folder creation");
+        return null;
+    }
+
+    if (!folderName) {
+        console.warn("[MANAGE] No folder name provided");
+        return null;
+    }
+
+    const r2FolderPath = `bui_invoice/projects/${folderName}/.placeholder`;
+    
+    try {
+        console.log(`[MANAGE] Creating R2 folder: ${r2FolderPath}`);
+        await r2.send(new PutObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: r2FolderPath,
+            Body: '',
+            ContentType: 'text/plain'
+        }));
+
+        // Build the folder link
+        const folderLink = R2_PUBLIC_URL 
+            ? `${R2_PUBLIC_URL}/bui_invoice/projects/${folderName}/`
+            : `https://${BUCKET_NAME}.r2.cloudflarestorage.com/bui_invoice/projects/${folderName}/`;
+        
+        console.log(`[MANAGE] R2 folder created successfully: ${folderLink}`);
+        return folderLink;
+    } catch (err) {
+        console.error("[MANAGE] R2 folder creation failed:", err.message);
+        throw err; // Re-throw to let caller handle it
+    }
+}
 
 function json(res, status, body) {
     res.statusCode = status;
@@ -58,7 +98,18 @@ export default async function handler(req, res) {
 
             // Map Supabase data to frontend format
             const result = (data || []).map(item => {
-                const mapped = { _rowNumber: item.id };  // Use id as rowNumber for compatibility
+                // Use appropriate primary key based on table type
+                let rowId;
+                if (tableKey === 'company') {
+                    rowId = item.company_id;
+                } else if (tableKey === 'projects') {
+                    rowId = item.project_id;
+                } else if (tableKey === 'owner') {
+                    rowId = item.owner_id;
+                } else {
+                    rowId = item.id;
+                }
+                const mapped = { _rowNumber: rowId };
 
                 // Map based on table
                 if (tableKey === 'company') {
@@ -134,24 +185,25 @@ export default async function handler(req, res) {
                         project_owner: data['Project Owner'] || data['project_owner']
                     };
 
-                    // Create R2 project folder (as a placeholder file)
-                    const folderName = projectCode || projectName || 'Unknown_Project';
-                    if (folderName && r2 && BUCKET_NAME) {
+                    // Create R2 project folder automatically
+                    const folderName = projectCode || projectName;
+                    if (folderName) {
                         try {
-                            const r2FolderPath = `bui_invoice/projects/${folderName}/.placeholder`;
-                            await r2.send(new PutObjectCommand({
-                                Bucket: BUCKET_NAME,
-                                Key: r2FolderPath,
-                                Body: '',
-                                ContentType: 'text/plain'
-                            }));
-
-                            // Set the folder link to R2 path
-                            insertData.drive_folder_link = `${R2_PUBLIC_URL}/${BUCKET_NAME}/bui_invoice/projects/${folderName}/`;
-                            console.log(`[MANAGE] Created R2 folder: ${r2FolderPath}`);
+                            const folderLink = await createR2ProjectFolder(folderName);
+                            if (folderLink) {
+                                insertData.drive_folder_link = folderLink;
+                                console.log(`[MANAGE] Project folder link set: ${folderLink}`);
+                            } else {
+                                console.warn(`[MANAGE] R2 folder not created (R2 not configured), continuing without folder link`);
+                            }
                         } catch (r2Err) {
-                            console.error("[MANAGE] R2 folder creation failed:", r2Err.message);
+                            // Log error but don't fail the entire operation
+                            console.error("[MANAGE] Failed to create R2 folder:", r2Err.message);
+                            // Optionally: return error to frontend
+                            // return json(res, 500, { success: false, message: `Failed to create project folder: ${r2Err.message}` });
                         }
+                    } else {
+                        console.warn("[MANAGE] No project code or name provided, skipping R2 folder creation");
                     }
                 } else if (tableKey === 'owner') {
                     insertData = {
@@ -177,10 +229,16 @@ export default async function handler(req, res) {
                 return json(res, 200, { success: true, message: "Row added" });
 
             } else if (action === "update") {
-                const recordId = rowNumber; // rowNumber is actually Supabase id
+                const recordId = rowNumber; // rowNumber is the primary key value
                 if (!recordId) {
                     return json(res, 400, { success: false, message: "Missing record ID" });
                 }
+
+                // Determine the primary key column based on table
+                let pkColumn = 'id';
+                if (tableKey === 'company') pkColumn = 'company_id';
+                else if (tableKey === 'projects') pkColumn = 'project_id';
+                else if (tableKey === 'owner') pkColumn = 'owner_id';
 
                 // Map frontend field names to Supabase column names for update
                 let updateData = { updated_at: new Date().toISOString() };
@@ -196,6 +254,28 @@ export default async function handler(req, res) {
                     if (data['Project Code'] !== undefined) updateData.project_code = data['Project Code'];
                     if (data['Company_ID'] !== undefined) updateData.company_id = data['Company_ID'];
                     if (data['Project Owner'] !== undefined) updateData.project_owner = data['Project Owner'];
+
+                    // Check if project needs R2 folder created (missing drive_folder_link)
+                    const { data: existingProject } = await supabase
+                        .from('projects')
+                        .select('project_code, project_name, drive_folder_link')
+                        .eq('project_id', recordId)
+                        .single();
+
+                    if (existingProject && !existingProject.drive_folder_link) {
+                        const folderName = existingProject.project_code || existingProject.project_name;
+                        if (folderName) {
+                            try {
+                                const folderLink = await createR2ProjectFolder(folderName);
+                                if (folderLink) {
+                                    updateData.drive_folder_link = folderLink;
+                                    console.log(`[MANAGE] Created missing R2 folder for project ${folderName}: ${folderLink}`);
+                                }
+                            } catch (r2Err) {
+                                console.error("[MANAGE] Failed to create R2 folder on update:", r2Err.message);
+                            }
+                        }
+                    }
                 } else if (tableKey === 'owner') {
                     if (data['Owner'] !== undefined) updateData.owner_name = data['Owner'];
                     if (data['First Name'] !== undefined) updateData.first_name = data['First Name'];
@@ -207,7 +287,7 @@ export default async function handler(req, res) {
                 const { error } = await supabase
                     .from(tableName)
                     .update(updateData)
-                    .eq('id', recordId);
+                    .eq(pkColumn, recordId);
 
                 if (error) {
                     console.error("[MANAGE] UPDATE error:", error);
@@ -223,10 +303,16 @@ export default async function handler(req, res) {
                     return json(res, 400, { success: false, message: "Missing record ID" });
                 }
 
+                // Determine the primary key column based on table
+                let pkColumn = 'id';
+                if (tableKey === 'company') pkColumn = 'company_id';
+                else if (tableKey === 'projects') pkColumn = 'project_id';
+                else if (tableKey === 'owner') pkColumn = 'owner_id';
+
                 const { error } = await supabase
                     .from(tableName)
                     .delete()
-                    .eq('id', recordId);
+                    .eq(pkColumn, recordId);
 
                 if (error) {
                     console.error("[MANAGE] DELETE error:", error);

@@ -53,7 +53,9 @@ app.all('/api/:functionName', async (req, res) => {
 
     if (fs.existsSync(modulePath)) {
         try {
-            const module = await import(`file://${modulePath}`);
+            // Add cache busting timestamp in development to reload modules
+            const cacheBust = process.env.NODE_ENV === 'production' ? '' : `?t=${Date.now()}`;
+            const module = await import(`file://${modulePath}${cacheBust}`);
             if (module.default) {
                 await module.default(req, res);
             } else {
