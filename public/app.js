@@ -824,6 +824,12 @@ async function loadManageView() {
         fixFoldersBtn.style.display = currentSheet === 'projects' ? 'block' : 'none';
     }
 
+    // Show/hide add button - hide for owner (personal account)
+    const addRowBtn = document.getElementById('add-row-btn');
+    if (addRowBtn) {
+        addRowBtn.style.display = currentSheet === 'owner' ? 'none' : 'block';
+    }
+
     // Load data from API
     try {
         const res = await fetch(`/api/manage?sheet=${currentSheet}`);
@@ -831,6 +837,15 @@ async function loadManageView() {
         if (json.success) {
             currentHeaders = json.headers;
             currentData = json.data;
+            
+            // For owner sheet, filter to show only current user's data
+            if (currentSheet === 'owner' && currentUser) {
+                currentData = currentData.filter(row => 
+                    row['Owner ID'] === currentUser.owner_id || 
+                    row['owner_id'] === currentUser.owner_id
+                );
+            }
+            
             renderManageTable();
         } else {
             alert("加载失败: " + json.message);
@@ -853,16 +868,20 @@ function renderManageTable() {
     }
 
     body.innerHTML = currentData.map(row => {
-        let buttons = `
-            <button class="btn-small btn-edit" data-row="${row._rowNumber}">修改</button>
-            <button class="btn-small btn-delete" data-row="${row._rowNumber}">删除</button>
-        `;
-
-        if (currentSheet === 'projects') {
-            const driveLink = row['Drive_Folder_Link'] || '';
+        let buttons = '';
+        
+        if (currentSheet === 'owner') {
+            // Personal account - only edit button, no delete
+            buttons = `<button class="btn-small btn-edit" data-row="${row._rowNumber}">修改</button>`;
+        } else if (currentSheet === 'projects') {
             buttons = `
-                <button class="btn-small btn-view" data-row="${row._rowNumber}">View</button>
-                <button class="btn-small btn-achieve" data-row="${row._rowNumber}" disabled>Achieve</button>
+                <button class="btn-small btn-edit" data-row="${row._rowNumber}">修改</button>
+                <button class="btn-small btn-view" data-row="${row._rowNumber}">查看</button>
+            `;
+        } else {
+            buttons = `
+                <button class="btn-small btn-edit" data-row="${row._rowNumber}">修改</button>
+                <button class="btn-small btn-delete" data-row="${row._rowNumber}">删除</button>
             `;
         }
 
@@ -874,11 +893,11 @@ function renderManageTable() {
         `;
     }).join('');
 
-    // Attach events
+    // Attach events - use string comparison for rowNumber (works for both numeric and string IDs)
     body.querySelectorAll('.btn-edit').forEach(btn => {
         btn.onclick = () => {
-            const rowNum = parseInt(btn.dataset.row);
-            const rowData = currentData.find(r => r._rowNumber === rowNum);
+            const rowNum = btn.dataset.row;
+            const rowData = currentData.find(r => String(r._rowNumber) === rowNum);
             editingRow = rowNum;
             showEditModal("修改记录", rowData);
         };
@@ -886,8 +905,8 @@ function renderManageTable() {
 
     body.querySelectorAll('.btn-view').forEach(btn => {
         btn.onclick = () => {
-            const rowNum = parseInt(btn.dataset.row);
-            const rowData = currentData.find(r => r._rowNumber === rowNum);
+            const rowNum = btn.dataset.row;
+            const rowData = currentData.find(r => String(r._rowNumber) === rowNum);
             editingRow = rowNum;
             showEditModal("查看详情", rowData, true);
         };
@@ -896,7 +915,7 @@ function renderManageTable() {
     body.querySelectorAll('.btn-delete').forEach(btn => {
         btn.onclick = async () => {
             if (!confirm("确定删除此记录?")) return;
-            const rowNum = parseInt(btn.dataset.row);
+            const rowNum = btn.dataset.row;
             await deleteRow(rowNum);
         };
     });
