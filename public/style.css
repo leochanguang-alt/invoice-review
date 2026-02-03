@@ -1278,3 +1278,175 @@ tr:hover td {
 .delete-btn:hover {
   background: var(--gray-600);
 }
+
+/* ========================================
+   LOGIN PAGE STYLES
+   ======================================== */
+
+.login-page {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--gray-900) 0%, var(--gray-800) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.login-container {
+  background: var(--bg-card);
+  padding: 3rem;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.login-logo h1 {
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
+  color: var(--economist-red);
+  margin-bottom: 2rem;
+  line-height: 1.3;
+}
+
+.login-form .form-group {
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.login-form .form-group label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+
+.login-form .form-group input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-main);
+  color: var(--text-main);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.login-form .form-group input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(227, 18, 11, 0.1);
+}
+
+.login-form .form-group input::placeholder {
+  color: var(--text-muted);
+}
+
+.login-error {
+  color: var(--danger);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  min-height: 1.25rem;
+}
+
+.login-buttons {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.login-btn {
+  flex: 1;
+  padding: 0.875rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.login-btn.btn-primary {
+  background: var(--primary);
+  color: white;
+  border: none;
+}
+
+.login-btn.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.login-btn.btn-secondary {
+  background: var(--bg-main);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+}
+
+.login-btn.btn-secondary:hover {
+  background: var(--bg-hover);
+}
+
+/* ========================================
+   SIDEBAR FOOTER & USER INFO STYLES
+   ======================================== */
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.user-welcome {
+  text-align: center;
+  padding: 0.75rem;
+  background: var(--bg-main);
+  border-radius: var(--radius);
+  margin-bottom: 0.5rem;
+}
+
+.welcome-text {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.user-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-top: 0.5rem;
+}
+
+.sidebar-btn {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+.sidebar-btn:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-btn.logout-btn {
+  background: var(--gray-600);
+  color: white;
+  border: none;
+}
+
+.sidebar-btn.logout-btn:hover {
+  background: var(--gray-700);
+}

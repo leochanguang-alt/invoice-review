@@ -46,56 +46,187 @@ function normalizeCompany(company) {
 }
 
 // Auth Elements
-const loginModal = document.getElementById('login-modal');
+const loginPage = document.getElementById('login-page');
 const mainApp = document.getElementById('main-app');
 const loginForm = document.getElementById('login-form');
-const passwordInput = document.getElementById('password-input');
+const loginEmailInput = document.getElementById('login-email');
+const loginPasswordInput = document.getElementById('login-password');
 const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
+const forgotPasswordBtn = document.getElementById('forgot-password-btn');
+const changePasswordBtn = document.getElementById('change-password-btn');
+
+// Current logged-in user
+let currentUser = null;
 
 // Initialize
 async function init() {
     setupNavigation();
-    // setupAuth(); // Auth disabled for now
+    setupAuth();
 
-    // Skip auth check - show app directly
-    showApp();
-
-    /* Original auth check (disabled):
-    const isAuthenticated = await checkAuth();
-    if (isAuthenticated) {
+    // Check if user is already logged in (from sessionStorage)
+    const savedUser = sessionStorage.getItem('currentUser');
+    if (savedUser) {
+        currentUser = JSON.parse(savedUser);
         showApp();
     } else {
         showLogin();
     }
-    */
 }
 
 function setupAuth() {
+    // Login form submit
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const password = passwordInput.value;
+        const email = loginEmailInput.value.trim();
+        const password = loginPasswordInput.value;
+        
+        loginError.textContent = '';
+        
         try {
-            const res = await fetch('/api/auth', {
+            const res = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'login', password })
+                body: JSON.stringify({ email, password })
             });
             const data = await res.json();
+            
             if (data.success) {
+                currentUser = data.user;
+                sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
+                loginEmailInput.value = '';
+                loginPasswordInput.value = '';
                 showApp();
-                passwordInput.value = '';
-                loginError.style.display = 'none';
             } else {
-                loginError.style.display = 'block';
+                loginError.textContent = data.message || 'Login failed';
             }
         } catch (e) {
             console.error('Login error', e);
-            loginError.innerText = "Connection Error";
-            loginError.style.display = 'block';
+            loginError.textContent = 'Connection error. Please try again.';
         }
     });
 
+    // Forgot password button
+    forgotPasswordBtn.addEventListener('click', () => {
+        document.getElementById('forgot-password-modal').style.display = 'flex';
+        document.getElementById('forgot-email').value = loginEmailInput.value || '';
+        document.getElementById('forgot-error').textContent = '';
+        document.getElementById('forgot-success').style.display = 'none';
+    });
+
+    // Forgot password form submit
+    document.getElementById('forgot-password-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('forgot-email').value.trim();
+        const errorEl = document.getElementById('forgot-error');
+        const successEl = document.getElementById('forgot-success');
+        
+        errorEl.textContent = '';
+        successEl.style.display = 'none';
+        
+        try {
+            const res = await fetch('/api/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                successEl.textContent = data.message;
+                successEl.style.display = 'block';
+                // If in dev mode and password returned, show it
+                if (data._debug_password) {
+                    successEl.textContent += ` (Dev: ${data._debug_password})`;
+                }
+            } else {
+                errorEl.textContent = data.message || 'Failed to reset password';
+            }
+        } catch (e) {
+            console.error('Reset password error', e);
+            errorEl.textContent = 'Connection error. Please try again.';
+        }
+    });
+
+    // Cancel forgot password
+    document.getElementById('cancel-forgot').addEventListener('click', () => {
+        document.getElementById('forgot-password-modal').style.display = 'none';
+    });
+
+    // Change password button
+    changePasswordBtn.addEventListener('click', () => {
+        document.getElementById('change-password-modal').style.display = 'flex';
+        document.getElementById('current-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('confirm-new-password').value = '';
+        document.getElementById('change-password-error').textContent = '';
+        document.getElementById('change-password-success').style.display = 'none';
+    });
+
+    // Change password form submit
+    document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const currentPassword = document.getElementById('current-password').value;
+        const newPassword = document.getElementById('new-password').value;
+        const confirmPassword = document.getElementById('confirm-new-password').value;
+        const errorEl = document.getElementById('change-password-error');
+        const successEl = document.getElementById('change-password-success');
+        
+        errorEl.textContent = '';
+        successEl.style.display = 'none';
+        
+        if (newPassword !== confirmPassword) {
+            errorEl.textContent = 'New passwords do not match';
+            return;
+        }
+        
+        if (newPassword.length < 6) {
+            errorEl.textContent = 'New password must be at least 6 characters';
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    owner_id: currentUser.owner_id,
+                    current_password: currentPassword,
+                    new_password: newPassword
+                })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                successEl.textContent = 'Password changed successfully!';
+                successEl.style.display = 'block';
+                setTimeout(() => {
+                    document.getElementById('change-password-modal').style.display = 'none';
+                }, 2000);
+            } else {
+                errorEl.textContent = data.message || 'Failed to change password';
+            }
+        } catch (e) {
+            console.error('Change password error', e);
+            errorEl.textContent = 'Connection error. Please try again.';
+        }
+    });
+
+    // Cancel change password
+    document.getElementById('cancel-change-password').addEventListener('click', () => {
+        document.getElementById('change-password-modal').style.display = 'none';
+    });
+
+    // Logout button
+    logoutBtn.addEventListener('click', () => {
+        currentUser = null;
+        sessionStorage.removeItem('currentUser');
+        showLogin();
+    });
+}
+
+// Legacy setupAuth for compatibility (keeping old code structure)
+function setupAuthLegacy() {
     logoutBtn.addEventListener('click', async () => {
         try {
             await fetch('/api/auth', {
@@ -121,14 +252,21 @@ async function checkAuth() {
 }
 
 function showApp() {
-    loginModal.style.display = 'none';
+    loginPage.style.display = 'none';
     mainApp.style.display = 'flex';
+    
+    // Update user name display
+    if (currentUser) {
+        document.getElementById('current-user-name').textContent = currentUser.owner_name || currentUser.email;
+    }
+    
     loadSummaryPage(); // Load summary page on app start
 }
 
 function showLogin() {
     mainApp.style.display = 'none';
-    loginModal.style.display = 'flex';
+    loginPage.style.display = 'flex';
+    loginError.textContent = '';
 }
 
 function setupNavigation() {
