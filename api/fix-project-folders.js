@@ -107,7 +107,7 @@ export default async function handler(req, res) {
 
         if (req.method === "POST") {
             const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-            const { project_id } = body; // Optional: fix specific project only
+            const { project_id, force_all } = body; // force_all: migrate all projects to R2
 
             let query = supabase
                 .from('projects')
@@ -115,10 +115,11 @@ export default async function handler(req, res) {
 
             if (project_id) {
                 query = query.eq('project_id', project_id);
-            } else {
-                // Only fix projects without folder link
+            } else if (!force_all) {
+                // Only fix projects without folder link (default behavior)
                 query = query.or('drive_folder_link.is.null,drive_folder_link.eq.');
             }
+            // If force_all is true, select all projects
 
             const { data: projects, error } = await query;
 
