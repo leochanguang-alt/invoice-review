@@ -984,38 +984,32 @@ async function showEditModal(title, rowData = {}, isViewMode = false) {
         // Project ID - auto-generated, readonly
         if (isProjectIdField) {
             const projectIdValue = editingRow ? value : newProjectId;
-            fieldsHtml += `<div style="margin-bottom: 10px;">
-                <label style="display: block; margin-bottom: 5px; color: #ccc;">${h}</label>
-                <input type="text" name="${h}" id="project-id-field" value="${projectIdValue}" readonly
-                    style="width: 100%; padding: 8px; border: 1px solid #333; background: #1a1a1a; color: #888; border-radius: 4px;" />
-                <small style="color: #666;">自动生成: 6位大写字母 (唯一)</small>
+            fieldsHtml += `<div class="edit-field-group">
+                <label class="edit-field-label">${h}</label>
+                <input type="text" name="${h}" id="project-id-field" value="${projectIdValue}" readonly class="edit-input readonly" />
+                <small class="edit-field-hint">自动生成: 6位大写字母 (唯一)</small>
             </div>`;
             continue;
         }
 
-        fieldsHtml += `<div style="margin-bottom: 10px;">
-            <label style="display: block; margin-bottom: 5px; color: #ccc;">${h}</label>`;
+        fieldsHtml += `<div class="edit-field-group">
+            <label class="edit-field-label">${h}</label>`;
 
         if (isOwnerName) {
             // Owner is auto-generated from First Name + Last Name (readonly)
-            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: #1a1a1a; color: #888; border-radius: 4px;" />
-            <small style="color: #666;">自动生成: First Name + Last Name</small>`;
+            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />
+            <small class="edit-field-hint">自动生成: First Name + Last Name</small>`;
         } else if (isMobileField) {
             // Mobile with country code prefix
             const mobileValue = value || '+86';
-            fieldsHtml += `<input type="text" name="${h}" value="${mobileValue}" 
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: #2d2d2d; color: #fff; border-radius: 4px;" 
-                placeholder="+86 13800138000" />
-            <small style="color: #666;">格式: +国家区号 手机号 (默认 +86)</small>`;
+            fieldsHtml += `<input type="text" name="${h}" value="${mobileValue}" class="edit-input" placeholder="+86 13800138000" />
+            <small class="edit-field-hint">格式: +国家区号 手机号 (默认 +86)</small>`;
         } else if (isProjectCodeField) {
-            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: #1a1a1a; color: #888; border-radius: 4px;" />
-            <small style="color: #666;">自动生成: Company Code + Project Name</small>`;
+            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />
+            <small class="edit-field-hint">自动生成: Company Code + Project Name</small>`;
         } else if (isCompanyField) {
             const isReadonly = isViewMode || (editingRow && currentSheet === 'projects');
-            fieldsHtml += `<select name="${h}" ${isReadonly ? 'disabled' : ''}
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: ${isReadonly ? '#1a1a1a' : '#2d2d2d'}; color: ${isReadonly ? '#888' : '#fff'}; border-radius: 4px;">
+            fieldsHtml += `<select name="${h}" ${isReadonly ? 'disabled' : ''} class="edit-select ${isReadonly ? 'readonly' : ''}">
                 <option value="">-- 请选择 --</option>
                 ${companyList.map(c => {
                 const companyID = c['Company_ID'] || c['Company ID'] || c['Company_Code'] || c['Code'] || '';
@@ -1028,21 +1022,17 @@ async function showEditModal(title, rowData = {}, isViewMode = false) {
             }
         } else if (isProjectNameField && (editingRow || isViewMode)) {
             // Project Name becomes readonly after creation or in view mode
-            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: #1a1a1a; color: #888; border-radius: 4px;" />
-            ${isViewMode ? '' : '<small style="color: #666;">项目创建后不可修改名称</small>'}`;
+            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />
+            ${isViewMode ? '' : '<small class="edit-field-hint">项目创建后不可修改名称</small>'}`;
         } else if (isViewMode) {
             // All other fields in view mode
-            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: #1a1a1a; color: #888; border-radius: 4px;" />`;
+            fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />`;
         } else if (isDateField) {
             const isReadonly = isViewMode;
-            fieldsHtml += `<input type="date" name="${h}" value="${value}" ${isReadonly ? 'readonly' : ''}
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: ${isReadonly ? '#1a1a1a' : '#2d2d2d'}; color: ${isReadonly ? '#888' : '#fff'}; border-radius: 4px;" />`;
+            fieldsHtml += `<input type="date" name="${h}" value="${value}" ${isReadonly ? 'readonly' : ''} class="edit-input ${isReadonly ? 'readonly' : ''}" />`;
         } else {
             const isReadonly = isViewMode;
-            fieldsHtml += `<input type="text" name="${h}" value="${value}" ${isReadonly ? 'readonly' : ''}
-                style="width: 100%; padding: 8px; border: 1px solid #333; background: ${isReadonly ? '#1a1a1a' : '#2d2d2d'}; color: ${isReadonly ? '#888' : '#fff'}; border-radius: 4px;" />`;
+            fieldsHtml += `<input type="text" name="${h}" value="${value}" ${isReadonly ? 'readonly' : ''} class="edit-input ${isReadonly ? 'readonly' : ''}" />`;
         }
 
         fieldsHtml += '</div>';
