@@ -1,6 +1,49 @@
 import { supabase } from "../lib/_supabase.js";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
+// Currency-Country linking helper
+async function getCurrencyList() {
+    if (!supabase) return [];
+    try {
+        const { data, error } = await supabase
+            .from('currency_list')
+            .select('currency_code, Country');
+        if (error) return [];
+        return data || [];
+    } catch {
+        return [];
+    }
+}
+
+function linkCurrencyCountry(data, currencyList) {
+    if (!currencyList || currencyList.length === 0) return;
+
+    const currency = (data.currency || '').toString().trim().toUpperCase();
+    const country = (data.country || '').toString().trim();
+
+    const hasCurrency = currency.length > 0;
+    const hasCountry = country.length > 0;
+
+    if (hasCurrency && !hasCountry) {
+        // Note: column name is 'Country' (capital C) in database
+        const row = currencyList.find(
+            (r) => (r.currency_code || '').toString().trim().toUpperCase() === currency
+        );
+        if (row && row.Country) {
+            data.country = (row.Country || '').toString().trim();
+            console.log(`[MANAGE] Auto-linked currency ${currency} -> country ${data.country}`);
+        }
+    } else if (hasCountry && !hasCurrency) {
+        const row = currencyList.find(
+            (r) => (r.Country || '').toString().trim().toLowerCase() === country.toLowerCase()
+        );
+        if (row && row.currency_code) {
+            data.currency = (row.currency_code || '').toString().trim().toUpperCase();
+            console.log(`[MANAGE] Auto-linked country ${country} -> currency ${data.currency}`);
+        }
+    }
+}
+
 // Table name mapping
 const TABLE_MAP = {
     company: "companies",
@@ -245,6 +288,10 @@ export default async function handler(req, res) {
 
                 if (tableKey === 'main') {
                     updateData = { ...updateData, ...mapInvoiceData(data) };
+                    
+                    // Auto-link currency and country for invoices
+                    const currencyList = await getCurrencyList();
+                    linkCurrencyCountry(updateData, currencyList);
                 } else if (tableKey === 'company') {
                     if (data['Company Name'] !== undefined) updateData.company_name = data['Company Name'];
                     if (data['Country'] !== undefined) updateData.country = data['Country'];
