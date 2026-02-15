@@ -1,5 +1,8 @@
 import { supabase } from "../lib/_supabase.js";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import { google } from "googleapis";
+import { getDriveAuth } from "../lib/_sheets.js";
 
 // Currency-Country linking helper
 async function getCurrencyList() {
@@ -169,6 +172,7 @@ export default async function handler(req, res) {
                     mapped['End Date'] = item.end_date || '';
                     mapped['Project Owner'] = item.project_owner || '';
                     mapped['Drive_Folder_Link'] = item.drive_folder_link || '';
+                    mapped['Status'] = item.archived ? 'Achieved' : 'Active';
                 } else if (tableKey === 'owner') {
                     mapped['Owner ID'] = item.owner_id || '';
                     mapped['Owner'] = item.owner_name || '';
@@ -299,6 +303,196 @@ export default async function handler(req, res) {
                 });
             }
 
+            // === REJECT INVOICES ACTION (must be before tableName validation) ===
+            if (action === "reject-invoices") {
+                const { invoiceIds, projectCode } = body;
+
+                if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+                    return json(res, 400, { success: false, message: "No invoice IDs provided" });
+                }
+
+                console.log(`[MANAGE] Rejecting ${invoiceIds.length} invoices from project ${projectCode}`);
+
+                // Initialize Google Drive client
+                let drive = null;
+                try {
+                    const auth = getDriveAuth();
+                    drive = google.drive({ version: "v3", auth });
+                } catch (driveErr) {
+                    console.warn(`[MANAGE] Could not initialize Google Drive client:`, driveErr.message);
+                }
+
+                const R2_ORIGINAL_PREFIX = 'bui_invoice/original_files/fr_google_drive';
+                const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.dev`;
+
+                let deletedCount = 0;
+                let resyncedCount = 0;
+                let updateErrors = [];
+
+                for (const invoiceId of invoiceIds) {
+                    try {
+                        // 1. Get the invoice record to find file info
+                        const { data: invoice, error: fetchError } = await supabase
+                            .from('invoices')
+                            .select('*')
+                            .eq('generated_invoice_id', invoiceId)
+                            .single();
+
+                        if (fetchError) {
+                            console.error(`[MANAGE] Could not find invoice ${invoiceId}:`, fetchError.message);
+                            updateErrors.push({ id: invoiceId, error: fetchError.message });
+                            continue;
+                        }
+
+                        // 2. Delete file from R2 project folder (achieved file)
+                        if (r2 && BUCKET_NAME && projectCode && invoice) {
+                            try {
+                                // Get extension from achieved_file_link or file_link_r2
+                                let fileExt = 'pdf';
+                                if (invoice.achieved_file_link) {
+                                    const ext = invoice.achieved_file_link.split('.').pop().split('?')[0];
+                                    if (ext) fileExt = ext;
+                                } else if (invoice.file_link_r2) {
+                                    const ext = invoice.file_link_r2.split('.').pop().split('?')[0];
+                                    if (ext) fileExt = ext;
+                                }
+                                const r2Key = `bui_invoice/projects/${projectCode}/${invoiceId}.${fileExt}`;
+
+                                const deleteCommand = new DeleteObjectCommand({
+                                    Bucket: BUCKET_NAME,
+                                    Key: r2Key
+                                });
+
+                                await r2.send(deleteCommand);
+                                console.log(`[MANAGE] Deleted R2 project file: ${r2Key}`);
+                                deletedCount++;
+                            } catch (r2Err) {
+                                console.warn(`[MANAGE] Could not delete R2 project file for ${invoiceId}:`, r2Err.message);
+                                // Continue even if R2 deletion fails
+                            }
+                        }
+
+                        // 3. Restore original file to R2 from Google Drive
+                        let newR2Link = null;
+                        let newR2Hash = null;
+                        const googleDriveFileId = invoice.file_id;
+                        
+                        if (googleDriveFileId && drive && r2 && BUCKET_NAME) {
+                            try {
+                                // Get file metadata from Google Drive
+                                const fileMetadata = await drive.files.get({
+                                    fileId: googleDriveFileId,
+                                    fields: 'id, name, mimeType',
+                                    supportsAllDrives: true
+                                });
+                                
+                                const originalFileName = fileMetadata.data.name;
+                                const mimeType = fileMetadata.data.mimeType;
+                                const sanitizedName = (originalFileName || googleDriveFileId).replace(/[\\\/:*?"<>|]/g, '_').trim();
+                                const r2Key = `${R2_ORIGINAL_PREFIX}/${sanitizedName}`;
+                                
+                                console.log(`[MANAGE] Syncing file from Google Drive: ${originalFileName} -> ${r2Key}`);
+
+                                // Check if file already exists in R2 original folder
+                                let fileExistsInR2 = false;
+                                try {
+                                    await r2.send(new HeadObjectCommand({
+                                        Bucket: BUCKET_NAME,
+                                        Key: r2Key
+                                    }));
+                                    fileExistsInR2 = true;
+                                    console.log(`[MANAGE] File already exists in R2: ${r2Key}`);
+                                } catch (headErr) {
+                                    if (headErr.name !== 'NotFound' && headErr.$metadata?.httpStatusCode !== 404) {
+                                        throw headErr;
+                                    }
+                                }
+
+                                if (fileExistsInR2) {
+                                    // File exists, just update the link
+                                    newR2Link = `${R2_PUBLIC_URL}/${r2Key}`;
+                                    console.log(`[MANAGE] Using existing R2 file: ${newR2Link}`);
+                                } else {
+                                    // Download from Google Drive and upload to R2
+                                    const response = await drive.files.get(
+                                        { fileId: googleDriveFileId, alt: "media" },
+                                        { responseType: "stream" }
+                                    );
+
+                                    const upload = new Upload({
+                                        client: r2,
+                                        params: {
+                                            Bucket: BUCKET_NAME,
+                                            Key: r2Key,
+                                            Body: response.data,
+                                            ContentType: mimeType || 'application/octet-stream',
+                                        },
+                                    });
+
+                                    const uploadResult = await upload.done();
+                                    newR2Hash = uploadResult.ETag?.replace(/"/g, '') || null;
+                                    newR2Link = `${R2_PUBLIC_URL}/${r2Key}`;
+                                    console.log(`[MANAGE] Successfully uploaded to R2: ${r2Key}, ETag: ${newR2Hash}`);
+                                    resyncedCount++;
+                                }
+                            } catch (syncErr) {
+                                console.error(`[MANAGE] Failed to sync file from Google Drive for ${invoiceId}:`, syncErr.message);
+                                // Continue even if sync fails - the record will still be rejected
+                            }
+                        }
+
+                        // 4. Update invoice status and restore/clear fields
+                        const updateData = {
+                            status: 'waiting for confirm',
+                            charge_to_project: null,
+                            generated_invoice_id: null,
+                            achieved_file_link: null,
+                            achieved_file_id: null
+                        };
+
+                        // Restore file_link_r2 if we have a new R2 link
+                        if (newR2Link) {
+                            updateData.file_link_r2 = newR2Link;
+                        }
+                        if (newR2Hash) {
+                            updateData.file_ID_HASH_R2 = newR2Hash;
+                        }
+
+                        const { error: updateError } = await supabase
+                            .from('invoices')
+                            .update(updateData)
+                            .eq('id', invoice.id);
+
+                        if (updateError) {
+                            console.error(`[MANAGE] Failed to update invoice ${invoiceId}:`, updateError.message);
+                            updateErrors.push({ id: invoiceId, error: updateError.message });
+                        } else {
+                            console.log(`[MANAGE] Invoice ${invoiceId} rejected successfully`);
+                        }
+
+                    } catch (err) {
+                        console.error(`[MANAGE] Error processing invoice ${invoiceId}:`, err.message);
+                        updateErrors.push({ id: invoiceId, error: err.message });
+                    }
+                }
+
+                if (updateErrors.length === invoiceIds.length) {
+                    return json(res, 500, { 
+                        success: false, 
+                        message: "All invoices failed to reject",
+                        errors: updateErrors 
+                    });
+                }
+
+                return json(res, 200, { 
+                    success: true, 
+                    message: `Successfully rejected ${invoiceIds.length - updateErrors.length} invoices`,
+                    deletedR2Files: deletedCount,
+                    resyncedFiles: resyncedCount,
+                    errors: updateErrors.length > 0 ? updateErrors : undefined
+                });
+            }
+
             const tableName = TABLE_MAP[tableKey];
 
             if (!tableName) {
@@ -386,7 +580,13 @@ export default async function handler(req, res) {
                 else if (tableKey === 'owner') pkColumn = 'owner_id';
 
                 // Map frontend field names to Supabase column names for update
-                let updateData = { updated_at: new Date().toISOString() };
+                // Note: not all tables have updated_at column
+                let updateData = {};
+                
+                // Only add updated_at for tables that have this column
+                if (tableKey !== 'projects') {
+                    updateData.updated_at = new Date().toISOString();
+                }
 
                 if (tableKey === 'main') {
                     updateData = { ...updateData, ...mapInvoiceData(data) };
@@ -403,6 +603,12 @@ export default async function handler(req, res) {
                     if (data['Project Code'] !== undefined) updateData.project_code = data['Project Code'];
                     if (data['Company_ID'] !== undefined) updateData.company_id = data['Company_ID'];
                     if (data['Project Owner'] !== undefined) updateData.project_owner = data['Project Owner'];
+                    // Handle Status field: convert 'Achieved'/'Active' to boolean archived
+                    if (data['Status'] !== undefined) {
+                        updateData.archived = data['Status'] === 'Achieved';
+                    }
+                    // Also support direct archived boolean (for Export page Archive button)
+                    if (data['archived'] !== undefined) updateData.archived = data['archived'];
 
                     // Check if project needs R2 folder created (missing drive_folder_link)
                     const { data: existingProject } = await supabase

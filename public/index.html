@@ -30,8 +30,8 @@
                 </div>
                 <p id="login-error" class="login-error"></p>
                 <div class="login-buttons">
-                    <button type="submit" class="btn-primary login-btn">登录</button>
-                    <button type="button" id="forgot-password-btn" class="btn-secondary login-btn">找回密码</button>
+                    <button type="submit" class="btn-primary login-btn">Login</button>
+                    <button type="button" id="forgot-password-btn" class="btn-secondary login-btn">Forgot Password</button>
                 </div>
             </form>
         </div>
@@ -40,8 +40,8 @@
     <!-- Forgot Password Modal -->
     <div id="forgot-password-modal" class="modal" style="display: none;">
         <div class="modal-content" style="width: 400px;">
-            <h2>找回密码</h2>
-            <p style="color: #aaa; margin-bottom: 20px;">输入您的邮箱地址，我们将发送新密码给您。</p>
+            <h2>Forgot Password</h2>
+            <p style="color: #aaa; margin-bottom: 20px;">Enter your email address and we will send you a new password.</p>
             <form id="forgot-password-form">
                 <div class="form-group">
                     <input type="email" id="forgot-email" placeholder="Enter your email" required />
@@ -49,8 +49,8 @@
                 <p id="forgot-error" class="login-error"></p>
                 <p id="forgot-success" style="color: #4ade80; display: none;"></p>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" class="btn-primary" style="flex:1;">发送新密码</button>
-                    <button type="button" id="cancel-forgot" class="btn-secondary" style="flex:1;">取消</button>
+                    <button type="submit" class="btn-primary" style="flex:1;">Send New Password</button>
+                    <button type="button" id="cancel-forgot" class="btn-secondary" style="flex:1;">Cancel</button>
                 </div>
             </form>
         </div>
@@ -59,25 +59,25 @@
     <!-- Change Password Modal -->
     <div id="change-password-modal" class="modal" style="display: none;">
         <div class="modal-content" style="width: 400px;">
-            <h2>修改密码</h2>
+            <h2>Change Password</h2>
             <form id="change-password-form">
                 <div class="form-group">
-                    <label>当前密码</label>
+                    <label>Current Password</label>
                     <input type="password" id="current-password" placeholder="Enter current password" required />
                 </div>
                 <div class="form-group">
-                    <label>新密码</label>
+                    <label>New Password</label>
                     <input type="password" id="new-password" placeholder="Enter new password (min 6 characters)" required minlength="6" />
                 </div>
                 <div class="form-group">
-                    <label>确认新密码</label>
+                    <label>Confirm New Password</label>
                     <input type="password" id="confirm-new-password" placeholder="Confirm new password" required />
                 </div>
                 <p id="change-password-error" class="login-error"></p>
                 <p id="change-password-success" style="color: #4ade80; display: none;"></p>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" class="btn-primary" style="flex:1;">保存</button>
-                    <button type="button" id="cancel-change-password" class="btn-secondary" style="flex:1;">取消</button>
+                    <button type="submit" class="btn-primary" style="flex:1;">Save</button>
+                    <button type="button" id="cancel-change-password" class="btn-secondary" style="flex:1;">Cancel</button>
                 </div>
             </form>
         </div>
@@ -90,6 +90,7 @@
             <div class="nav-item active" data-page="summary">Dashboard</div>
             <div class="nav-item" data-page="invoice">Review Invoice</div>
             <div class="nav-item" data-page="reconciliation">Reconciliation</div>
+            <div class="nav-item" data-page="export">Export</div>
             <div class="nav-item" data-page="settings">Settings</div>
             <div class="sidebar-footer">
                 <div class="user-welcome">
@@ -97,7 +98,7 @@
                     <div class="welcome-text">Expense Management</div>
                     <div class="user-name">User: <span id="current-user-name">-</span></div>
                 </div>
-                <button id="change-password-btn" class="sidebar-btn">🔐 修改密码</button>
+                <button id="change-password-btn" class="sidebar-btn">🔐 Change Password</button>
                 <button id="logout-btn" class="sidebar-btn logout-btn">Logout</button>
             </div>
         </div>
@@ -169,27 +170,27 @@
             <div id="settings-area" style="display: none;">
                 <div class="settings-cards">
                     <div class="settings-card" data-sheet="company">
-                        <h3>公司信息管理</h3>
-                        <p>Company_info 表</p>
+                        <h3>Company Management</h3>
+                        <p>Company_info Table</p>
                     </div>
                     <div class="settings-card" data-sheet="projects">
-                        <h3>项目管理</h3>
-                        <p>Projects 表</p>
+                        <h3>Project Management</h3>
+                        <p>Projects Table</p>
                     </div>
                     <div class="settings-card" data-sheet="owner">
-                        <h3>个人账户管理</h3>
-                        <p>Invoice_Owner 表</p>
+                        <h3>Account Management</h3>
+                        <p>Invoice_Owner Table</p>
                     </div>
                 </div>
 
                 <!-- Management Table View -->
                 <div id="manage-view" style="display: none;">
                     <div class="manage-header">
-                        <button id="back-to-settings" class="btn-secondary">← 返回</button>
+                        <button id="back-to-settings" class="btn-secondary">← Back</button>
                         <h2 id="manage-title"></h2>
                         <div style="display: flex; gap: 8px;">
-                            <button id="fix-folders-btn" class="btn-secondary" style="display: none;">🔧 修复文件夹</button>
-                            <button id="add-row-btn" class="btn-primary">+ 添加</button>
+                            <button id="fix-folders-btn" class="btn-secondary" style="display: none;">🔧 Fix Folders</button>
+                            <button id="add-row-btn" class="btn-primary">+ Add</button>
                         </div>
                     </div>
                     <div class="card">
@@ -256,6 +257,137 @@
                 </div>
             </div>
 
+            <!-- Export Page -->
+            <div id="export-area" style="display: none;">
+                <div class="export-header">
+                    <h2>Project Export</h2>
+                    <p style="color: #888; margin-top: 5px;">Export project expense reports and related files</p>
+                </div>
+                <div class="card">
+                    <table class="export-table" id="export-table">
+                        <thead>
+                            <tr>
+                                <th>Actions</th>
+                                <th>Project ID</th>
+                                <th>Project Code</th>
+                                <th>Company ID</th>
+                                <th>Owner</th>
+                                <th>Start Date</th>
+                                <th>End Date</th>
+                                <th>Total Amount (HKD)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="export-table-body">
+                            <!-- Rows will be dynamically generated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Project Review Modal -->
+            <div id="project-review-modal" class="modal" style="display: none;">
+                <div class="modal-content modal-content-light" style="width: 95%; max-width: 1200px; max-height: 90vh; overflow-y: auto; position: relative;">
+                    <button id="close-review-modal" class="btn-close-square">&times;</button>
+                    <div class="review-modal-header">
+                        <h2>Project Invoice Review - <span id="review-project-title"></span></h2>
+                    </div>
+                    <div class="review-toolbar">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="select-all-invoices"> Select All
+                        </label>
+                        <span id="selected-count">Selected: 0</span>
+                        <button id="reject-selected-btn" class="btn-reject" disabled>Reject Selected</button>
+                    </div>
+                    <table class="review-table" id="review-invoices-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"></th>
+                                <th>Invoice ID</th>
+                                <th>Date</th>
+                                <th>Vendor</th>
+                                <th>Amount</th>
+                                <th>Currency</th>
+                                <th>Category</th>
+                                <th>Owner</th>
+                                <th>R2 File</th>
+                            </tr>
+                        </thead>
+                        <tbody id="review-invoices-body">
+                            <!-- Invoice rows will be dynamically generated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Reject Confirm Modal -->
+            <div id="reject-confirm-modal" class="modal" style="display: none;">
+                <div class="modal-content modal-content-light" style="width: 450px;">
+                    <h2>Confirm Rejection</h2>
+                    <p style="margin: 15px 0; color: #666;">
+                        Are you sure you want to reject <strong id="reject-count"></strong> selected record(s)?
+                    </p>
+                    <p style="color: #888; font-size: 14px;">
+                        After rejection, these records will be changed to "waiting for confirm" status and removed from the project's R2 folder.
+                    </p>
+                    <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
+                        <button id="reject-confirm-no" class="btn-secondary">Cancel</button>
+                        <button id="reject-confirm-yes" class="btn-danger">Confirm Rejection</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Confirm Modal -->
+            <div id="export-confirm-modal" class="modal" style="display: none;">
+                <div class="modal-content modal-content-light" style="width: 500px;">
+                    <h2>Export Project Report</h2>
+                    <p style="margin: 15px 0; color: #666;">
+                        Project: <strong id="export-project-name"></strong>
+                    </p>
+                    <div style="margin: 20px 0;">
+                        <p style="color: #666; margin-bottom: 10px;">The following files will be generated:</p>
+                        <ul style="color: #444; margin-left: 20px;">
+                            <li>Excel Report (with expense details)</li>
+                            <li>ZIP Archive (with all invoice files)</li>
+                        </ul>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button id="export-confirm-yes" class="btn-primary" style="flex:1;">Confirm Export</button>
+                        <button id="export-confirm-no" class="btn-secondary" style="flex:1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Archive Confirm Modal -->
+            <div id="archive-confirm-modal" class="modal" style="display: none;">
+                <div class="modal-content modal-content-light" style="width: 450px;">
+                    <h2>Archive Project</h2>
+                    <p style="margin: 15px 0; color: #666;">
+                        Are you sure you want to archive project <strong id="archive-project-name"></strong>?
+                    </p>
+                    <p style="color: #888; font-size: 14px;">
+                        After archiving, this project will not appear in the dropdowns on the "Review Invoice" page.
+                    </p>
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button id="archive-confirm-yes" class="btn-primary" style="flex:1;">Confirm Archive</button>
+                        <button id="archive-confirm-no" class="btn-secondary" style="flex:1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Progress Modal -->
+            <div id="export-progress-modal" class="modal" style="display: none;">
+                <div class="modal-content modal-content-light" style="width: 450px;">
+                    <h2>Exporting...</h2>
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="export-progress-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <div id="export-progress-status" class="progress-status" style="color: #666;">Preparing...</div>
+                </div>
+            </div>
+
             <!-- Confirm Modal -->
             <div id="confirm-modal" class="modal" style="display: none;">
                 <div class="modal-content" style="width: 400px;">
@@ -288,12 +420,12 @@
             <!-- Edit Modal -->
             <div id="edit-modal" class="modal" style="display: none;">
                 <div class="modal-content" style="width: 400px;">
-                    <h2 id="edit-modal-title">编辑</h2>
+                    <h2 id="edit-modal-title">Edit</h2>
                     <form id="edit-form">
                         <div id="edit-fields"></div>
                         <div style="display: flex; gap: 10px; margin-top: 20px;">
-                            <button type="submit" class="btn-primary" style="flex:1;">保存</button>
-                            <button type="button" id="cancel-edit" class="btn-secondary" style="flex:1;">取消</button>
+                            <button type="submit" class="btn-primary" style="flex:1;">Save</button>
+                            <button type="button" id="cancel-edit" class="btn-secondary" style="flex:1;">Cancel</button>
                         </div>
                     </form>
                 </div>

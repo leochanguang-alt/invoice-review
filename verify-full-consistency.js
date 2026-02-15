@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
-import { getSheetsClient, SHEET_ID, MAIN_SHEET, getDriveAuth } from './api/_sheets.js';
+import { supabase } from './lib/_supabase.js';
+import { getSheetsClient, SHEET_ID, MAIN_SHEET, getDriveAuth } from './lib/_sheets.js';
 import { google } from "googleapis";
 import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import crypto from 'crypto';

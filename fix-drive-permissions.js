@@ -1,6 +1,6 @@
 /**
- * 检查并修复 Drive 文件的共享权限
- * 新上传的文件需要设置为"知道链接的人可查看"才能在 iframe 中预览
+ * Check and fix Drive file sharing permissions
+ * Newly uploaded files need to be set to "Anyone with the link can view" for iframe preview
  */
 
 import 'dotenv/config';
@@ -43,14 +43,14 @@ function getDriveAuth() {
 }
 
 async function main() {
-    console.log("=== 检查并修复 Drive 文件共享权限 ===\n");
+    console.log("=== Check and fix Drive file sharing permissions ===\n");
 
     const auth = getDriveAuth();
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
 
-    // 1. 获取 Main 表数据
-    console.log("[STEP 1] 读取 Main 表...");
+    // 1. Get Main sheet data
+    console.log("[STEP 1] Reading Main sheet...");
     const mainRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `${MAIN_SHEET}!A:Z`,
@@ -65,11 +65,11 @@ async function main() {
     );
 
     if (driveIdIdx === -1) {
-        console.error("❌ Main 表中找不到 'Drive_ID' 或 'File_ID' 列");
+        console.error("❌ Cannot find 'Drive_ID' or 'File_ID' column in Main sheet");
         return;
     }
 
-    // 收集最后 20 条记录的 Drive_ID（新添加的记录）
+    // Collect Drive_IDs from last 20 records (newly added records)
     const recentRecords = [];
     for (let i = Math.max(1, mainData.length - 20); i < mainData.length; i++) {
         const row = mainData[i] || [];
@@ -82,16 +82,16 @@ async function main() {
         }
     }
 
-    console.log(`   检查最近 ${recentRecords.length} 条记录的文件权限...\n`);
+    console.log(`   Checking file permissions for recent ${recentRecords.length} records...\n`);
 
-    // 2. 检查并修复每个文件的权限
+    // 2. Check and fix permissions for each file
     let fixed = 0;
     let alreadyShared = 0;
     let errors = 0;
 
     for (const item of recentRecords) {
         try {
-            // 获取当前权限
+            // Get current permissions
             const permissionsRes = await drive.permissions.list({
                 fileId: item.driveId,
                 fields: 'permissions(id, type, role)',
@@ -102,11 +102,11 @@ async function main() {
             const hasPublicAccess = permissions.some(p => p.type === 'anyone');
 
             if (hasPublicAccess) {
-                console.log(`   ✓ 第 ${item.rowNumber} 行: 已有公开访问权限`);
+                console.log(`   ✓ Row ${item.rowNumber}: Already has public access`);
                 alreadyShared++;
             } else {
-                // 添加公开访问权限
-                console.log(`   → 第 ${item.rowNumber} 行: 添加公开访问权限...`);
+                // Add public access permission
+                console.log(`   → Row ${item.rowNumber}: Adding public access permission...`);
                 await drive.permissions.create({
                     fileId: item.driveId,
                     requestBody: {
@@ -115,24 +115,24 @@ async function main() {
                     },
                     supportsAllDrives: true
                 });
-                console.log(`   ✓ 第 ${item.rowNumber} 行: 权限已添加`);
+                console.log(`   ✓ Row ${item.rowNumber}: Permission added`);
                 fixed++;
             }
         } catch (err) {
-            console.log(`   ✗ 第 ${item.rowNumber} 行: 错误 - ${err.message}`);
+            console.log(`   ✗ Row ${item.rowNumber}: Error - ${err.message}`);
             errors++;
         }
     }
 
-    // 3. 输出结果
-    console.log("\n=== 结果 ===\n");
-    console.log(`检查记录数: ${recentRecords.length}`);
-    console.log(`已有公开权限: ${alreadyShared}`);
-    console.log(`已修复权限: ${fixed}`);
-    console.log(`错误: ${errors}`);
+    // 3. Output results
+    console.log("\n=== Results ===\n");
+    console.log(`Records checked: ${recentRecords.length}`);
+    console.log(`Already has public permission: ${alreadyShared}`);
+    console.log(`Permissions fixed: ${fixed}`);
+    console.log(`Errors: ${errors}`);
 
     if (fixed > 0) {
-        console.log("\n✅ 权限已修复，请刷新页面重试预览！");
+        console.log("\n✅ Permissions fixed, please refresh the page to retry preview!");
     }
 }
 

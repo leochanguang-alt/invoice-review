@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import crypto from 'crypto';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 async function analyzeAndFixData() {
     console.log('=== Analyzing Supabase Data ===\n');

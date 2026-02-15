@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import crypto from 'crypto';
-import { getSheetsClient, SHEET_ID, MAIN_SHEET, norm, buildHeaderIndex } from './api/_sheets.js';
-import { supabase } from './api/_supabase.js';
+import { getSheetsClient, SHEET_ID, MAIN_SHEET, norm, buildHeaderIndex } from './lib/_sheets.js';
+import { supabase } from './lib/_supabase.js';
 
 async function analyzeDataDiff() {
     console.log('=== Analyzing Data Differences ===\n');

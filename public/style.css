@@ -655,6 +655,12 @@ tr:hover td {
   margin-right: 0.25rem;
   font-family: inherit;
   transition: all 0.2s ease;
+  display: inline-block;
+}
+
+/* Action buttons cell - keep buttons on same line */
+#manage-body td:last-child {
+  white-space: nowrap;
 }
 
 .btn-edit {
@@ -1558,4 +1564,330 @@ tr:hover td {
 
 #edit-form #cancel-edit:hover {
   background: var(--gray-200);
+}
+
+/* ================================
+   Export Page Styles
+   ================================ */
+.export-header {
+  margin-bottom: 1.5rem;
+}
+
+.export-header h2 {
+  color: var(--text-heading);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.export-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.export-table th,
+.export-table td {
+  padding: 12px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.export-table th {
+  background: var(--gray-50);
+  font-weight: 600;
+  color: var(--text-heading);
+  white-space: nowrap;
+}
+
+.export-table td {
+  color: var(--text-main);
+}
+
+.export-table tbody tr:hover {
+  background: var(--gray-50);
+}
+
+.export-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-export {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--primary);
+  color: white;
+}
+
+.btn-export:hover {
+  background: var(--primary-hover);
+}
+
+.btn-archive {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--gray-100);
+  color: var(--text-main);
+}
+
+.btn-archive:hover {
+  background: var(--gray-200);
+}
+
+.btn-archive.archived {
+  background: var(--success);
+  color: white;
+  border-color: var(--success);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.status-badge.active {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.status-badge.archived {
+  background: #F3E5F5;
+  color: #7B1FA2;
+}
+
+/* Progress bar styles */
+.progress-container {
+  margin: 20px 0;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--gray-200);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+
+.progress-status {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+/* Total amount formatting */
+.amount-cell {
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+/* Review button styles */
+.btn-review {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+  color: var(--primary);
+}
+
+.btn-review:hover {
+  background: var(--primary);
+  color: white;
+}
+
+/* Project Review Modal Styles */
+.review-modal-header {
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  padding-right: 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-heading);
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.btn-close:hover {
+  color: var(--text-main);
+}
+
+.modal-content .btn-close-square {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px !important;
+  height: 28px !important;
+  background: #f0f0f0 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #666 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.modal-content .btn-close-square:hover {
+  background: #e0e0e0 !important;
+  color: #333 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 15px;
+  padding: 12px 15px;
+  background: var(--gray-50);
+  border-radius: var(--radius);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-main);
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+#selected-count {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.btn-reject {
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--danger);
+  color: white;
+  margin-left: auto;
+}
+
+.btn-reject:hover:not(:disabled) {
+  background: #c62828;
+}
+
+.btn-reject:disabled {
+  background: var(--gray-300);
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-danger:hover {
+  background: #c62828;
+}
+
+/* Review Table Styles */
+.review-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.review-table th,
+.review-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-table th {
+  background: var(--gray-100);
+  font-weight: 600;
+  color: var(--text-heading);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.review-table td {
+  color: var(--text-main);
+}
+
+.review-table tbody tr:hover {
+  background: var(--gray-50);
+}
+
+.review-table tbody tr.selected {
+  background: #E3F2FD;
+}
+
+.review-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.r2-file-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.r2-file-link:hover {
+  text-decoration: underline;
 }

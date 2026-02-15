@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { google } from "googleapis";
 import fs from "fs";
 import path from "path";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 
 const drive = google.drive({ version: "v3", auth: getDriveAuth() });
 

@@ -1,4 +1,4 @@
-import { supabase } from "./_supabase.js";
+import { supabase } from "../lib/_supabase.js";
 
 const WAITING_STATUS = (process.env.WAITING_STATUS || "Waiting for Confirm").trim();
 

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 const BUCKET = process.env.R2_BUCKET_NAME;
 const ENDPOINT = process.env.R2_ENDPOINT;

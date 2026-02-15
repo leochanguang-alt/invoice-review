@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { json } from "./_sheets.js";
+import { json } from "../lib/_sheets.js";
 
 // Initialize R2 client
 // Note: These env vars must be set by the user
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
         // 2. Analyze with Gemini
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent([
-            "请分析此文件并提取核心数据。请以JSON格式返回，包含：invoice_date, vendor, amount, currency, category, project_code。",
+            "Please analyze this file and extract the core data. Return in JSON format with: invoice_date, vendor, amount, currency, category, project_code.",
             {
                 inlineData: {
                     data: Buffer.from(fileArrayBuffer).toString("base64"),

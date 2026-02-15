@@ -1,5 +1,5 @@
 /**
- * 检查 Google Drive 中的项目文件夹名称是否与 Projects 表中的 Project Code 匹配
+ * Check if Google Drive project folder names match Project Code in Projects table
  */
 
 import 'dotenv/config';
@@ -23,7 +23,7 @@ const GOOGLE_CLIENT_ID = cleanEnv(process.env.GOOGLE_CLIENT_ID);
 const GOOGLE_CLIENT_SECRET = cleanEnv(process.env.GOOGLE_CLIENT_SECRET);
 const GOOGLE_REFRESH_TOKEN = cleanEnv(process.env.GOOGLE_REFRESH_TOKEN);
 
-// Invoice 归档的父文件夹 ID
+// Invoice archive parent folder ID
 const ARCHIVE_PARENT_ID = '1FreZ79xZvK3S1_Zlg4oyaep0-1tkXwF8';
 
 function norm(v) {
@@ -62,14 +62,14 @@ function getDriveAuth() {
 }
 
 async function main() {
-    console.log("=== 检查 Google Drive 项目文件夹 ===\n");
+    console.log("=== Check Google Drive Project Folders ===\n");
 
     const auth = getDriveAuth();
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
 
-    // 1. 获取 Projects 表的所有 Project Code
-    console.log("[STEP 1] 读取 Projects 表...");
+    // 1. Get all Project Codes from Projects table
+    console.log("[STEP 1] Reading Projects sheet...");
     const projectsRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: 'Projects!A:Z',
@@ -97,17 +97,17 @@ async function main() {
             });
         }
     }
-    console.log(`   找到 ${projectCodes.size} 个 Project Code:\n`);
+    console.log(`   Found ${projectCodes.size} Project Codes:\n`);
     for (const [key, val] of projectCodes) {
         console.log(`   - ${val.code}`);
         if (val.folderLink) {
-            console.log(`     链接: ${val.folderLink}`);
+            console.log(`     Link: ${val.folderLink}`);
         }
     }
     console.log("");
 
-    // 2. 列出 Google Drive 中归档文件夹下的所有子文件夹
-    console.log("[STEP 2] 读取 Google Drive 归档文件夹...");
+    // 2. List all subfolders under the archive folder in Google Drive
+    console.log("[STEP 2] Reading Google Drive archive folder...");
 
     const foldersRes = await drive.files.list({
         q: `'${ARCHIVE_PARENT_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
@@ -118,7 +118,7 @@ async function main() {
     });
 
     const driveFolders = foldersRes.data.files || [];
-    console.log(`   找到 ${driveFolders.length} 个文件夹:\n`);
+    console.log(`   Found ${driveFolders.length} folders:\n`);
 
     const driveFolderNames = new Map(); // name.toLowerCase() -> {name, id, link}
     for (const folder of driveFolders) {
@@ -131,35 +131,35 @@ async function main() {
     }
     console.log("");
 
-    // 3. 比较
-    console.log("[STEP 3] 比较 Project Code 和文件夹名称...\n");
+    // 3. Compare
+    console.log("[STEP 3] Comparing Project Code and folder names...\n");
 
     const issues = [];
 
-    // 检查每个 Project Code 是否有对应的文件夹
+    // Check if each Project Code has a corresponding folder
     for (const [key, project] of projectCodes) {
         if (!driveFolderNames.has(key)) {
             issues.push({
                 type: 'MISSING_FOLDER',
                 projectCode: project.code,
-                message: `Project Code "${project.code}" 在 Google Drive 中没有对应的文件夹`
+                message: `Project Code "${project.code}" has no corresponding folder in Google Drive`
             });
         }
     }
 
-    // 检查每个文件夹是否有对应的 Project Code
+    // Check if each folder has a corresponding Project Code
     for (const [key, folder] of driveFolderNames) {
         if (!projectCodes.has(key)) {
             issues.push({
                 type: 'EXTRA_FOLDER',
                 folderName: folder.name,
                 folderId: folder.id,
-                message: `文件夹 "${folder.name}" 在 Projects 表中没有对应的 Project Code`
+                message: `Folder "${folder.name}" has no corresponding Project Code in Projects table`
             });
         }
     }
 
-    // 检查名称大小写是否完全匹配
+    // Check if names match exactly (case-sensitive)
     for (const [key, project] of projectCodes) {
         const folder = driveFolderNames.get(key);
         if (folder && folder.name !== project.code) {
@@ -167,40 +167,40 @@ async function main() {
                 type: 'CASE_MISMATCH',
                 projectCode: project.code,
                 folderName: folder.name,
-                message: `大小写不匹配: Project Code "${project.code}" vs 文件夹名 "${folder.name}"`
+                message: `Case mismatch: Project Code "${project.code}" vs folder name "${folder.name}"`
             });
         }
     }
 
-    // 4. 输出结果
-    console.log("=== 检查结果 ===\n");
-    console.log(`Projects 表中的 Project Code: ${projectCodes.size}`);
-    console.log(`Google Drive 中的文件夹: ${driveFolders.length}`);
-    console.log(`发现问题: ${issues.length}\n`);
+    // 4. Output results
+    console.log("=== Check Results ===\n");
+    console.log(`Project Codes in Projects table: ${projectCodes.size}`);
+    console.log(`Folders in Google Drive: ${driveFolders.length}`);
+    console.log(`Issues found: ${issues.length}\n`);
 
     if (issues.length === 0) {
-        console.log("✅ 所有 Project Code 和文件夹名称完全匹配！\n");
+        console.log("✅ All Project Codes and folder names match perfectly!\n");
     } else {
-        console.log("⚠️  发现以下问题:\n");
+        console.log("⚠️  Found the following issues:\n");
 
         const missingFolders = issues.filter(i => i.type === 'MISSING_FOLDER');
         const extraFolders = issues.filter(i => i.type === 'EXTRA_FOLDER');
         const caseMismatches = issues.filter(i => i.type === 'CASE_MISMATCH');
 
         if (missingFolders.length > 0) {
-            console.log(`--- 缺少文件夹 (${missingFolders.length}) ---`);
+            console.log(`--- Missing Folders (${missingFolders.length}) ---`);
             missingFolders.forEach(i => console.log(`   ${i.message}`));
             console.log("");
         }
 
         if (extraFolders.length > 0) {
-            console.log(`--- 多余的文件夹 (${extraFolders.length}) ---`);
+            console.log(`--- Extra Folders (${extraFolders.length}) ---`);
             extraFolders.forEach(i => console.log(`   ${i.message}`));
             console.log("");
         }
 
         if (caseMismatches.length > 0) {
-            console.log(`--- 大小写不匹配 (${caseMismatches.length}) ---`);
+            console.log(`--- Case Mismatches (${caseMismatches.length}) ---`);
             caseMismatches.forEach(i => console.log(`   ${i.message}`));
             console.log("");
         }

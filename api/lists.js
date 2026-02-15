@@ -1,4 +1,4 @@
-import { supabase } from "./_supabase.js";
+import { supabase } from "../lib/_supabase.js";
 
 function json(res, status, body) {
   res.statusCode = status;

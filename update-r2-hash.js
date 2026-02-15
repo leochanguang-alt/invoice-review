@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { google } from "googleapis";
 import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
-import { getDriveAuth } from "./api/_sheets.js";
-import { supabase } from './api/_supabase.js';
+import { getDriveAuth } from "./lib/_sheets.js";
+import { supabase } from './lib/_supabase.js';
 
 const drive = google.drive({ version: "v3", auth: getDriveAuth() });
 

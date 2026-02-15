@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 import fs from 'fs';
 import path from 'path';
 
@@ -113,9 +113,9 @@ async function compareFileNames() {
     }
 
     if (allProjectFilesMatch) {
-        console.log("\n‚úÖ All project files match by name!");
+        console.log("\n‚ú?All project files match by name!");
     } else {
-        console.log(`\n‚ùå Found ${projectMismatches.length} projects with file name differences:\n`);
+        console.log(`\n‚ù?Found ${projectMismatches.length} projects with file name differences:\n`);
         for (const m of projectMismatches) {
             console.log(`\nüìÅ ${m.project} (Drive: ${m.driveCount}, Local: ${m.localCount})`);
             if (m.missingLocal.length > 0) {
@@ -153,10 +153,10 @@ async function compareFileNames() {
 
     console.log("\nFile name comparison:");
     if (missingLocalTest.length === 0 && extraLocalTest.length === 0) {
-        console.log("‚úÖ All Test_invoice files match by name!");
+        console.log("‚ú?All Test_invoice files match by name!");
     } else {
         if (missingLocalTest.length > 0) {
-            console.log(`\n‚ùå Missing locally (${missingLocalTest.length}):`);
+            console.log(`\n‚ù?Missing locally (${missingLocalTest.length}):`);
             missingLocalTest.forEach(f => console.log(`   - ${f}`));
         }
         if (extraLocalTest.length > 0) {
@@ -174,9 +174,9 @@ async function compareFileNames() {
 
     console.log("\nProjects folder:");
     if (allProjectFilesMatch) {
-        console.log("  ‚úÖ All files match");
+        console.log("  ‚ú?All files match");
     } else {
-        console.log(`  ‚ùå ${projectMismatches.length} projects have file differences`);
+        console.log(`  ‚ù?${projectMismatches.length} projects have file differences`);
     }
 
     console.log("\nTest_invoice folder:");

@@ -2,8 +2,8 @@ import 'dotenv/config';
 import { google } from "googleapis";
 import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
-import { getDriveAuth } from "./api/_sheets.js";
-import { supabase } from './api/_supabase.js';
+import { getDriveAuth } from "./lib/_sheets.js";
+import { supabase } from './lib/_supabase.js';
 
 const drive = google.drive({ version: "v3", auth: getDriveAuth() });
 
@@ -20,8 +20,7 @@ const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 // Normalize R2_PUBLIC_URL: remove trailing slash for consistent concatenation
 const RAW_R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${BUCKET_NAME}.r2.cloudflarestorage.com`;
 const R2_PUBLIC_URL = RAW_R2_PUBLIC_URL.replace(/\/+$/, ''); // Remove trailing slashes
-const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // 仅同步最近N天
-
+const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // Only sync recent N days
 function sanitizeName(name) {
     if (!name) return "";
     return name.replace(/[\\\/:*?"<>|]/g, '_').trim();
@@ -66,7 +65,7 @@ async function syncFolderToR2(folderId, r2Prefix) {
             const safeName = sanitizeName(file.name);
             const nextR2Prefix = `${r2Prefix}/${safeName}`;
 
-            // 时间过滤：只同步最近 DAYS_BACK 天
+            // Time filter: only sync files within DAYS_BACK
             if (file.modifiedTime) {
                 const cutoff = new Date();
                 cutoff.setDate(cutoff.getDate() - DAYS_BACK);

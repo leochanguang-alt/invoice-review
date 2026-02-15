@@ -1,7 +1,7 @@
 /**
- * 检查 Main 表中的 Invoice_ID 是否符合命名规则
- * 规则: {ProjectCode}-{4位序号}-{金额整数}{货币}
- * 例如: BUI-2512-0001-100HKD
+ * Check if Invoice_ID in Main sheet follows naming convention
+ * Rule: {ProjectCode}-{4-digit sequence}-{amount integer}{currency}
+ * Example: BUI-2512-0001-100HKD
  */
 
 import 'dotenv/config';
@@ -75,15 +75,15 @@ async function getSheetId(sheets, sheetName) {
 }
 
 async function main() {
-    console.log("=== 检查 Invoice_ID 命名规则 ===\n");
-    console.log("规则: {ProjectCode}-{4位序号}-{金额整数}{货币}");
-    console.log("例如: BUI-2512-0001-100HKD\n");
+    console.log("=== Check Invoice_ID naming convention ===\n");
+    console.log("Rule: {ProjectCode}-{4-digit sequence}-{amount integer}{currency}");
+    console.log("Example: BUI-2512-0001-100HKD\n");
 
     const auth = getDriveAuth();
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // 1. 获取 Projects 表的所有 Project Code
-    console.log("[STEP 1] 读取 Projects 表...");
+    // 1. Get all Project Codes from Projects sheet
+    console.log("[STEP 1] Reading Projects sheet...");
     const projectsRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: 'Projects!A:Z',
@@ -103,10 +103,10 @@ async function main() {
             validProjectCodes.add(code.toLowerCase());
         }
     }
-    console.log(`   找到 ${validProjectCodes.size} 个有效的 Project Code\n`);
+    console.log(`   Found ${validProjectCodes.size} valid Project Codes\n`);
 
-    // 2. 获取 Main 表数据
-    console.log("[STEP 2] 读取 Main 表...");
+    // 2. Get Main sheet data
+    console.log("[STEP 2] Reading Main sheet...");
     const mainRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `${MAIN_SHEET}!A:Z`,
@@ -116,7 +116,7 @@ async function main() {
     const mainData = mainRes.data.values || [];
     const mainHeaders = (mainData[0] || []).map(norm);
 
-    // 找到需要的列索引
+    // Find required column indices
     const invoiceIdIdx = mainHeaders.findIndex(h =>
         h.toLowerCase() === 'invoice_id' || h.toLowerCase() === 'invoice id'
     );
@@ -134,14 +134,14 @@ async function main() {
     );
 
     if (invoiceIdIdx === -1) {
-        console.error("❌ Main 表中找不到 'Invoice_ID' 列");
+        console.error("❌ Cannot find 'Invoice_ID' column in Main sheet");
         return;
     }
 
-    console.log(`   Main 表共有 ${mainData.length - 1} 行数据\n`);
+    console.log(`   Main sheet has ${mainData.length - 1} rows of data\n`);
 
-    // 3. 检查每一行的 Invoice_ID
-    console.log("[STEP 3] 检查 Invoice_ID 格式...\n");
+    // 3. Check each row's Invoice_ID
+    console.log("[STEP 3] Checking Invoice_ID format...\n");
 
     const issues = [];
     let checkedCount = 0;
@@ -157,7 +157,7 @@ async function main() {
         const status = norm(row[statusIdx]);
         const rowNum = i + 1;
 
-        // 跳过空的 Invoice_ID (未提交的记录)
+        // Skip empty Invoice_ID (unsubmitted records)
         if (!invoiceId) {
             emptyCount++;
             continue;
@@ -165,14 +165,14 @@ async function main() {
 
         checkedCount++;
 
-        // 解析 Invoice_ID
-        // 格式: ProjectCode-Seq-AmountCurrency
-        // 例如: BUI-2512-0001-100HKD
+        // Parse Invoice_ID
+        // Format: ProjectCode-Seq-AmountCurrency
+        // Example: BUI-2512-0001-100HKD
 
         const issueList = [];
 
-        // 尝试匹配格式
-        // ProjectCode 可能包含多个 "-"，所以我们从后往前找
+        // Try to match format
+        // ProjectCode may contain multiple "-", so we search from end to beginning
         const parts = invoiceId.split('-');
 
         if (parts.length < 3) {
@@ -182,56 +182,56 @@ async function main() {
                 projectCode,
                 amount,
                 currency,
-                issue: `格式错误: 应有至少3段(用-分隔)，当前只有 ${parts.length} 段`
+                issue: `Format error: should have at least 3 parts (separated by -), currently only ${parts.length} parts`
             });
             continue;
         }
 
-        // 最后一段是 AmountCurrency (如 100HKD)
+        // Last part is AmountCurrency (e.g. 100HKD)
         const lastPart = parts[parts.length - 1];
-        // 倒数第二段是序号 (如 0001)
+        // Second to last part is sequence number (e.g. 0001)
         const seqPart = parts[parts.length - 2];
-        // 前面的都是 ProjectCode
+        // Everything before is ProjectCode
         const projectCodePart = parts.slice(0, parts.length - 2).join('-');
 
-        // 检查序号格式 (应该是4位数字)
+        // Check sequence number format (should be 4 digits)
         if (!/^\d{4}$/.test(seqPart)) {
-            issueList.push(`序号格式错误: "${seqPart}" 应为4位数字`);
+            issueList.push(`Sequence format error: "${seqPart}" should be 4 digits`);
         }
 
-        // 检查 AmountCurrency 格式
-        // 支持 m 前缀表示负数金额，如 m600GBP 表示 -600 GBP
+        // Check AmountCurrency format
+        // Supports 'm' prefix for negative amounts, e.g. m600GBP means -600 GBP
         const amountCurrencyMatch = lastPart.match(/^(m?)(\d+)([A-Za-z]+)$/);
         if (!amountCurrencyMatch) {
-            issueList.push(`金额货币格式错误: "${lastPart}" 应为 "金额+货币" 如 "100HKD" 或 "m600GBP"`);
+            issueList.push(`Amount currency format error: "${lastPart}" should be "amount+currency" like "100HKD" or "m600GBP"`);
         } else {
             const isNegative = amountCurrencyMatch[1] === 'm';
             const idAmountNum = parseInt(amountCurrencyMatch[2]);
             const idCurrency = amountCurrencyMatch[3];
             const actualAmount = isNegative ? -idAmountNum : idAmountNum;
 
-            // 检查货币是否匹配
+            // Check if currency matches
             if (currency && idCurrency.toUpperCase() !== currency.toUpperCase()) {
-                issueList.push(`货币不匹配: ID中是 "${idCurrency}"，记录中是 "${currency}"`);
+                issueList.push(`Currency mismatch: ID has "${idCurrency}", record has "${currency}"`);
             }
 
-            // 检查金额是否匹配 (取整数部分)
+            // Check if amount matches (integer part)
             if (amount) {
                 const expectedAmount = Math.round(parseFloat(amount.replace(/,/g, '')) || 0);
                 if (expectedAmount !== actualAmount) {
-                    issueList.push(`金额不匹配: ID中是 ${actualAmount}，记录中是 ${expectedAmount}`);
+                    issueList.push(`Amount mismatch: ID has ${actualAmount}, record has ${expectedAmount}`);
                 }
             }
         }
 
-        // 检查 ProjectCode 是否匹配
+        // Check if ProjectCode matches
         if (projectCode && projectCodePart.toLowerCase() !== projectCode.toLowerCase()) {
-            issueList.push(`ProjectCode不匹配: ID中是 "${projectCodePart}"，记录中是 "${projectCode}"`);
+            issueList.push(`ProjectCode mismatch: ID has "${projectCodePart}", record has "${projectCode}"`);
         }
 
-        // 检查 ProjectCode 是否有效
+        // Check if ProjectCode is valid
         if (!validProjectCodes.has(projectCodePart.toLowerCase())) {
-            issueList.push(`ProjectCode无效: "${projectCodePart}" 不在 Projects 表中`);
+            issueList.push(`Invalid ProjectCode: "${projectCodePart}" not in Projects sheet`);
         }
 
         if (issueList.length > 0) {
@@ -248,30 +248,30 @@ async function main() {
         }
     }
 
-    // 4. 输出结果
-    console.log("=== 检查结果 ===\n");
-    console.log(`总行数: ${mainData.length - 1}`);
-    console.log(`空 Invoice_ID (未提交): ${emptyCount}`);
-    console.log(`已检查 Invoice_ID: ${checkedCount}`);
-    console.log(`格式正确: ${validCount}`);
-    console.log(`发现问题: ${issues.length}\n`);
+    // 4. Output results
+    console.log("=== Check Results ===\n");
+    console.log(`Total rows: ${mainData.length - 1}`);
+    console.log(`Empty Invoice_ID (unsubmitted): ${emptyCount}`);
+    console.log(`Checked Invoice_IDs: ${checkedCount}`);
+    console.log(`Format correct: ${validCount}`);
+    console.log(`Issues found: ${issues.length}\n`);
 
     if (issues.length === 0) {
-        console.log("✅ 所有 Invoice_ID 格式都正确！\n");
+        console.log("✅ All Invoice_ID formats are correct!\n");
         return;
     }
 
-    console.log("⚠️  发现以下问题:\n");
+    console.log("⚠️  Found the following issues:\n");
     issues.forEach(issue => {
-        console.log(`第 ${issue.rowNumber} 行:`);
+        console.log(`Row ${issue.rowNumber}:`);
         console.log(`   Invoice_ID: "${issue.invoiceId}"`);
         console.log(`   Project: "${issue.projectCode}", Amount: "${issue.amount}", Currency: "${issue.currency}"`);
-        console.log(`   问题: ${issue.issue}`);
+        console.log(`   Issue: ${issue.issue}`);
         console.log("");
     });
 
-    // 5. 标记有问题的行为黄色
-    console.log("[STEP 4] 将有问题的行标记为黄色...");
+    // 5. Mark problematic rows yellow
+    console.log("[STEP 4] Marking problematic rows yellow...");
 
     const mainSheetId = await getSheetId(sheets, MAIN_SHEET);
 
@@ -305,7 +305,7 @@ async function main() {
                 requests: requests
             }
         });
-        console.log(`   ✅ 已将 ${issues.length} 行标记为黄色！\n`);
+        console.log(`   ✅ Marked ${issues.length} rows yellow!\n`);
     }
 }
 

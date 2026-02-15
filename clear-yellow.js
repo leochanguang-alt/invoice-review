@@ -1,5 +1,5 @@
 /**
- * 清除 Main 表中所有黄色背景标记
+ * Clear all yellow background marks in Main sheet
  */
 
 import 'dotenv/config';
@@ -56,12 +56,12 @@ function getDriveAuth() {
 }
 
 async function main() {
-    console.log("=== 清除 Main 表所有黄色标记 ===\n");
+    console.log("=== Clear all yellow marks in Main sheet ===\n");
 
     const auth = getDriveAuth();
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // 获取 sheet ID
+    // Get sheet ID
     const spreadsheet = await sheets.spreadsheets.get({
         spreadsheetId: SHEET_ID,
         fields: 'sheets.properties'
@@ -77,10 +77,10 @@ async function main() {
     const colCount = sheet.properties.gridProperties.columnCount;
 
     console.log(`Sheet: ${MAIN_SHEET}`);
-    console.log(`行数: ${rowCount}, 列数: ${colCount}\n`);
+    console.log(`Rows: ${rowCount}, Columns: ${colCount}\n`);
 
-    // 清除整个表的背景色（设置为白色）
-    console.log("正在清除所有背景色...");
+    // Clear background color for entire sheet (set to white)
+    console.log("Clearing all background colors...");
 
     await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SHEET_ID,
@@ -89,7 +89,7 @@ async function main() {
                 repeatCell: {
                     range: {
                         sheetId: mainSheetId,
-                        startRowIndex: 1,  // 从第2行开始 (跳过header)
+                        startRowIndex: 1,  // Starting from row 2 (skip header)
                         endRowIndex: rowCount,
                         startColumnIndex: 0,
                         endColumnIndex: colCount
@@ -110,7 +110,7 @@ async function main() {
         }
     });
 
-    console.log("✅ 已清除所有黄色标记！\n");
+    console.log("✅ All yellow marks cleared!\n");
 }
 
 main().catch(err => {

@@ -13,16 +13,16 @@ $logFile = Join-Path $logDir ("sync-" + (Get-Date -Format "yyyyMMdd-HH") + ".log
 "[$timestamp] === Sync Started ===" | Out-File -FilePath $logFile -Encoding UTF8 -Append
 
 try {
-    # 强制使用 Service Account：清空 OAuth Refresh Token，避免 invalid_grant
+    # Force using Service Account: clear OAuth Refresh Token to avoid invalid_grant
     $env:GOOGLE_REFRESH_TOKEN = ""
 
-    # 简要记录所需的服务账号变量是否存在（不输出敏感值）
+    # Briefly log whether required service account variables exist (do not output sensitive values)
     $hasEmail = -not [string]::IsNullOrEmpty($env:GOOGLE_SERVICE_ACCOUNT_EMAIL)
     $hasKey = -not [string]::IsNullOrEmpty($env:GOOGLE_PRIVATE_KEY)
     "[INFO] Service Account email present: $hasEmail" | Out-File -FilePath $logFile -Encoding UTF8 -Append
     "[INFO] Service Account key present: $hasKey" | Out-File -FilePath $logFile -Encoding UTF8 -Append
 
-    # 执行同步脚本，将标准输出与错误输出同时写入日志
+    # Execute sync script, redirect both stdout and stderr to log
     node sync-to-r2.js >> $logFile 2>&1
 } catch {
     "[$(Get-Date -Format 'yyyyMMdd-HHmmss')] ERROR: $_" | Out-File -FilePath $logFile -Encoding UTF8 -Append

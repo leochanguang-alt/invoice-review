@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
-import { getDriveAuth } from './api/_sheets.js';
+import { getDriveAuth } from './lib/_sheets.js';
 
 const drive = google.drive({ version: 'v3', auth: getDriveAuth() });
 const FOLDER_ID = '1-SfI4cPugsqOuMzgtBPwv9Ca3JVGSlc3';

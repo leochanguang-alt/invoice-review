@@ -1,7 +1,7 @@
-import { supabase } from "./_supabase.js";
+import { supabase } from "../lib/_supabase.js";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { google } from "googleapis";
-import { getDriveAuth } from "./_sheets.js";
+import { getDriveAuth } from "../lib/_sheets.js";
 
 function json(res, status, body) {
     res.statusCode = status;

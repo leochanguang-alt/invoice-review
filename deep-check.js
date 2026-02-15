@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 import fs from 'fs';
 import path from 'path';
 
@@ -75,7 +75,7 @@ async function deepCheck() {
     console.log('\nExtra locally:', extra.length > 0 ? extra : 'None');
 
     if (missing.length === 0 && extra.length === 0) {
-        console.log('\nâœ… Perfect match!');
+        console.log('\nâœ?Perfect match!');
     }
 }
 

@@ -1,15 +1,15 @@
 /**
- * 汇率更新 API（改为写入 Supabase，不再写 Google Sheet）
+ * Exchange Rate Update API (writes to Supabase, no longer to Google Sheet)
  *
- * GET /api/update-rates            - 仅在每月1日运行（除非 ?force=true）
- * GET /api/update-rates?force=true - 强制运行
+ * GET /api/update-rates            - Only runs on the 1st day of the month (unless ?force=true)
+ * GET /api/update-rates?force=true - Force run
  *
- * 逻辑：
- * 1) 货币列表来源：Supabase 表 currency_list
- * 2) 写入目标：Supabase 表 currency_rates（唯一键 currency_code + rate_date）
+ * Logic:
+ * 1) Currency list source: Supabase table currency_list
+ * 2) Write target: Supabase table currency_rates (unique key: currency_code + rate_date)
  */
 
-import { supabase } from './_supabase.js';
+import { supabase } from '../lib/_supabase.js';
 
 async function getExchangeRate(fromCurrency, toCurrency = 'HKD') {
     try {
@@ -54,19 +54,19 @@ export default async function handler(req, res) {
         if (!isFirstDay && !forceUpdate) {
             return json(res, 200, {
                 success: true,
-                message: '今天不是月初，无需更新汇率',
+                message: 'Not the first day of the month, no rate update needed',
                 today: formatDate(today),
                 nextUpdate: formatDate(new Date(today.getFullYear(), today.getMonth() + 1, 1))
             });
         }
 
-        // 1) 读取货币列表（Supabase currency_list）
+        // 1) Read currency list (Supabase currency_list)
         const { data: currencyRows, error: listErr } = await supabase
             .from('currency_list')
             .select('currency_code');
 
         if (listErr) {
-            return json(res, 500, { success: false, message: `读取货币列表失败: ${listErr.message}` });
+            return json(res, 500, { success: false, message: `Failed to read currency list: ${listErr.message}` });
         }
 
         const currencies = (currencyRows || [])
@@ -74,20 +74,20 @@ export default async function handler(req, res) {
             .filter(Boolean);
 
         if (currencies.length === 0) {
-            return json(res, 200, { success: true, message: '货币列表为空' });
+            return json(res, 200, { success: true, message: 'Currency list is empty' });
         }
 
         const firstDay = getFirstDayOfMonth();
         const dateStr = formatDate(firstDay);
 
-        // 2) 获取当月已存在记录，避免重复
+        // 2) Get existing records for the month to avoid duplicates
         const { data: existing, error: existErr } = await supabase
             .from('currency_rates')
             .select('currency_code, rate_date')
             .eq('rate_date', dateStr);
 
         if (existErr) {
-            return json(res, 500, { success: false, message: `读取历史记录失败: ${existErr.message}` });
+            return json(res, 500, { success: false, message: `Failed to read history records: ${existErr.message}` });
         }
 
         const existingSet = new Set((existing || []).map(r => `${r.currency_code}_${r.rate_date}`));
@@ -98,7 +98,7 @@ export default async function handler(req, res) {
         for (const currency of currencies) {
             const key = `${currency}_${dateStr}`;
             if (existingSet.has(key)) {
-                results.push({ currency, status: 'skipped', message: '已存在' });
+                results.push({ currency, status: 'skipped', message: 'Already exists' });
                 continue;
             }
 
@@ -111,34 +111,34 @@ export default async function handler(req, res) {
                     upserts.push({ currency_code: currency, rate_date: dateStr, rate_to_hkd: rate });
                     results.push({ currency, rate, status: 'success' });
                 } else {
-                    results.push({ currency, status: 'failed', message: '获取失败' });
+                    results.push({ currency, status: 'failed', message: 'Fetch failed' });
                 }
             }
 
-            // 轻量限速
+            // Light rate limiting
             await new Promise(resolve => setTimeout(resolve, 200));
         }
 
-        // 3) 写入 Supabase（upsert，唯一键 currency_code+rate_date）
+        // 3) Write to Supabase (upsert, unique key: currency_code+rate_date)
         if (upserts.length > 0) {
             const { error: upsertErr } = await supabase
                 .from('currency_rates')
                 .upsert(upserts, { onConflict: 'currency_code,rate_date' });
 
             if (upsertErr) {
-                return json(res, 500, { success: false, message: `写入失败: ${upsertErr.message}` });
+                return json(res, 500, { success: false, message: `Write failed: ${upsertErr.message}` });
             }
         }
 
         return json(res, 200, {
             success: true,
-            message: `已更新 ${upserts.length} 条汇率记录`,
+            message: `Updated ${upserts.length} exchange rate records`,
             date: dateStr,
             results
         });
 
     } catch (e) {
-        console.error('汇率更新错误:', e);
+        console.error('Exchange rate update error:', e);
         return json(res, 500, { success: false, message: e?.message || String(e) });
     }
 }

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 async function clearAllInvoices() {
     console.log('=== Clearing ALL records from Supabase invoices table ===\n');
@@ -60,7 +60,7 @@ async function clearAllInvoices() {
         .from('invoices')
         .select('*', { count: 'exact', head: true });
 
-    console.log(`\nâœ… Done! Records before: ${beforeCount}, Records after: ${afterCount}`);
+    console.log(`\nâœ?Done! Records before: ${beforeCount}, Records after: ${afterCount}`);
 }
 
 clearAllInvoices().catch(console.error);

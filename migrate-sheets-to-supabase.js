@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { getSheetsClient, SHEET_ID, buildHeaderIndex, norm } from './api/_sheets.js';
-import { supabase } from './api/_supabase.js';
+import { getSheetsClient, SHEET_ID, buildHeaderIndex, norm } from './lib/_sheets.js';
+import { supabase } from './lib/_supabase.js';
 import fs from 'fs';
 
 const logFile = 'migration.log';

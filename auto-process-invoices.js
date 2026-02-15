@@ -3,8 +3,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
-import { supabase } from './api/_supabase.js';
-import { getCurrencyList, linkCurrencyCountry } from './api/currency-country-link.js';
+import { supabase } from './lib/_supabase.js';
+import { getCurrencyList, linkCurrencyCountry } from './lib/currency-country-link.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // R2 Configuration
@@ -21,7 +21,7 @@ const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PREFIX = 'bui_invoice/original_files/fr_google_drive/';
 const GENAI_MODEL = 'gemini-2.0-flash';
 const LOG_FILE = path.join(process.cwd(), 'sync-log.txt');
-const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // 仅扫描最近N天
+const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // Only scan recent N days
 
 // Construct public R2 URL (adjust based on your R2 bucket configuration)
 // If using custom domain: https://your-domain.com/
@@ -192,15 +192,15 @@ async function processInvoices() {
                 const buffer = await streamToBuffer(getRes.Body);
 
                 // Gemini Extraction
-                const prompt = `请分析这张发票图片。提取以下信息并以严格的 JSON 格式返回，不要包含任何 Markdown 格式或解释性文字：
-invoice_number (发票号码)
-date (日期, 格式 YYYY-MM-DD)
-vendor_name (供应商名称)
-City:(费用发生的城市）
-Country:(费用发生的国家）
-total_amount (总金额, 数字格式)
-currency (货币单位选择其一:GBP/HKD/USD/EUR/SEK/DKK/CHF/CNY/CAD/AED)
-category(费用用途选择其中之一：Hotel/Flight/Train/Taxi/Entertainment/office expense/Communication/IT expense/Meal)`;
+                const prompt = `Please analyze this invoice image. Extract the following information and return it in strict JSON format, without any Markdown formatting or explanatory text:
+invoice_number (invoice number)
+date (date, format YYYY-MM-DD)
+vendor_name (vendor name)
+City: (city where expense occurred)
+Country: (country where expense occurred)
+total_amount (total amount, numeric format)
+currency (currency unit, choose one: GBP/HKD/USD/EUR/SEK/DKK/CHF/CNY/CAD/AED)
+category (expense category, choose one: Hotel/Flight/Train/Taxi/Entertainment/office expense/Communication/IT expense/Meal)`;
 
                 const result = await model.generateContent([
                     {

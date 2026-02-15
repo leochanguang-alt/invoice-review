@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { google } from 'googleapis';
 import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { getDriveAuth } from './api/_sheets.js';
+import { getDriveAuth } from './lib/_sheets.js';
 
 const drive = google.drive({ version: 'v3', auth: getDriveAuth() });
 

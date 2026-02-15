@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 async function test() {
     console.log('Testing Supabase connection and data retrieval...\n');

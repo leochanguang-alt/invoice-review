@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 import fs from 'fs';
 import path from 'path';
 
@@ -133,10 +133,10 @@ async function compare() {
 
     console.log("\n3. Project folder comparison:");
     if (missingLocalProjects.length === 0 && extraLocalProjects.length === 0) {
-        console.log("   âœ… All project folder names match!");
+        console.log("   âœ?All project folder names match!");
     } else {
         if (missingLocalProjects.length > 0) {
-            console.log(`   âŒ Missing locally (${missingLocalProjects.length}):`);
+            console.log(`   â?Missing locally (${missingLocalProjects.length}):`);
             missingLocalProjects.forEach(p => console.log(`      - ${p}`));
         }
         if (extraLocalProjects.length > 0) {
@@ -180,7 +180,7 @@ async function compare() {
     if (outOfSyncProjects.length > 0) {
         console.log("\n   Out of sync projects:");
         outOfSyncProjects.forEach(p => {
-            const arrow = p.diff > 0 ? 'â†“' : 'â†‘';
+            const arrow = p.diff > 0 ? 'â†? : 'â†?;
             console.log(`     ${arrow} ${p.name}: Drive=${p.driveCount}, Local=${p.localCount} (${p.diff > 0 ? '+' : ''}${p.diff})`);
         });
     }
@@ -202,9 +202,9 @@ async function compare() {
     console.log(`   Found ${localTestReceiptFiles.length} files in local n8n_Test/Test_Receipt`);
 
     if (driveTestInvoiceFiles.length === localTestReceiptFiles.length) {
-        console.log("   âœ… File counts match!");
+        console.log("   âœ?File counts match!");
     } else {
-        console.log(`   âŒ File count mismatch: Drive=${driveTestInvoiceFiles.length}, Local=${localTestReceiptFiles.length}`);
+        console.log(`   â?File count mismatch: Drive=${driveTestInvoiceFiles.length}, Local=${localTestReceiptFiles.length}`);
 
         // Find differences
         const missingLocally = driveTestInvoiceFiles.filter(f => !localTestReceiptFiles.includes(f));

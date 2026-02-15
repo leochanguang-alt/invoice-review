@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
-import { getDriveAuth } from './api/_sheets.js';
+import { getDriveAuth } from './lib/_sheets.js';
 
 async function findFile() {
     console.log('Searching for TicketDetails.pdf...');

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 import fs from 'fs';
 import path from 'path';
 import { pipeline } from 'stream/promises';
@@ -70,10 +70,10 @@ async function syncDriveToLocal(folderId, localPath) {
                     const writeStream = fs.createWriteStream(localFilePath);
                     await pipeline(response.data, writeStream);
 
-                    console.log(`✅ Downloaded: ${safeFileName}`);
+                    console.log(`�?Downloaded: ${safeFileName}`);
                     syncedCount++;
                 } catch (err) {
-                    console.error(`❌ Error downloading ${file.name}:`, err.message);
+                    console.error(`�?Error downloading ${file.name}:`, err.message);
                     errorCount++;
                 }
             } else {
@@ -98,9 +98,9 @@ async function main() {
     console.log("\n" + "=".repeat(50));
     console.log("SYNC COMPLETE");
     console.log("=".repeat(50));
-    console.log(`✅ Downloaded: ${result.syncedCount} files`);
+    console.log(`�?Downloaded: ${result.syncedCount} files`);
     console.log(`⏭️ Skipped (already exists): ${result.skippedCount} files`);
-    console.log(`❌ Errors: ${result.errorCount} files`);
+    console.log(`�?Errors: ${result.errorCount} files`);
     console.log(`⏱️ Duration: ${duration} seconds`);
 
     // Verify final count

@@ -1,7 +1,7 @@
 /**
- * 自动化脚本：在 Google Drive 上为项目创建文件夹并同步链接到 Google Sheets
+ * Automation script: Create project folders on Google Drive and sync links to Google Sheets
  * 
- * 用法: node create-project-folders.js
+ * Usage: node create-project-folders.js
  */
 
 import 'dotenv/config';
@@ -11,7 +11,7 @@ const SHEET_ID = process.env.SHEET_ID;
 const PROJECTS_SHEET = 'Projects';
 const PARENT_FOLDER_ID = '14cHbyYH-wZSHfFHS-5aY-x7zw2bip2lD';
 
-// 清理环境变量
+// Clean environment variables
 function cleanEnv(v) {
     if (!v) return '';
     v = v.trim();
@@ -23,7 +23,7 @@ function cleanEnv(v) {
     return v;
 }
 
-// 获取 Auth 客户端
+// Get Auth client
 function getAuth() {
     const email = cleanEnv(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
     let key = cleanEnv(process.env.GOOGLE_PRIVATE_KEY);
@@ -40,7 +40,7 @@ function getAuth() {
     });
 }
 
-// 列号转A1格式
+// Convert column number to A1 format
 function toA1Column(n) {
     let s = '';
     while (n > 0) {
@@ -56,7 +56,7 @@ async function main() {
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
 
-    console.log('正在读取 Projects 表...');
+    console.log('Reading Projects sheet...');
     const dataRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `${PROJECTS_SHEET}!A:Z`,
@@ -64,7 +64,7 @@ async function main() {
 
     const values = dataRes.data.values || [];
     if (values.length === 0) {
-        console.log('Projects 表为空');
+        console.log('Projects sheet is empty');
         return;
     }
 
@@ -73,13 +73,13 @@ async function main() {
     let linkColIdx = headers.findIndex(h => h === 'Drive_Folder_Link');
 
     if (projectCodeIdx === -1) {
-        console.error('找不到 Project Code 列！');
+        console.error('Cannot find Project Code column!');
         return;
     }
 
-    // 如果没有 Link 列，则在最后添加一列
+    // If no Link column, add one at the end
     if (linkColIdx === -1) {
-        console.log('未找到 Drive_Folder_Link 列，准备新增。');
+        console.log('Drive_Folder_Link column not found, preparing to add.');
         linkColIdx = headers.length;
         await sheets.spreadsheets.values.update({
             spreadsheetId: SHEET_ID,
@@ -89,9 +89,9 @@ async function main() {
         });
     }
 
-    console.log(`Project Code 列: ${toA1Column(projectCodeIdx + 1)}, Link 列: ${toA1Column(linkColIdx + 1)}`);
+    console.log(`Project Code column: ${toA1Column(projectCodeIdx + 1)}, Link column: ${toA1Column(linkColIdx + 1)}`);
 
-    // 1. 创建或查找 'projects' 顶级文件夹
+    // 1. Create or find 'projects' top-level folder
     let projectsFolderId;
     const listRes = await drive.files.list({
         q: `name = 'projects' and '${PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
@@ -100,7 +100,7 @@ async function main() {
 
     if (listRes.data.files.length > 0) {
         projectsFolderId = listRes.data.files[0].id;
-        console.log(`找到已存在的 projects 文件夹: ${projectsFolderId}`);
+        console.log(`Found existing projects folder: ${projectsFolderId}`);
     } else {
         const createRes = await drive.files.create({
             requestBody: {
@@ -111,10 +111,10 @@ async function main() {
             fields: 'id',
         });
         projectsFolderId = createRes.data.id;
-        console.log(`创建了顶级 projects 文件夹: ${projectsFolderId}`);
+        console.log(`Created top-level projects folder: ${projectsFolderId}`);
     }
 
-    // 2. 遍历行并创建文件夹
+    // 2. Iterate rows and create folders
     const updates = [];
     for (let i = 1; i < values.length; i++) {
         const row = values[i];
@@ -122,9 +122,9 @@ async function main() {
         const existingLink = (row[linkColIdx] || '').trim();
 
         if (projectCode && !existingLink) {
-            console.log(`  正在为项目 ${projectCode} 创建文件夹...`);
+            console.log(`  Creating folder for project ${projectCode}...`);
 
-            // 检查子文件夹是否已存在
+            // Check if subfolder already exists
             const subListRes = await drive.files.list({
                 q: `name = '${projectCode}' and '${projectsFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
                 fields: 'files(id, webViewLink)',
@@ -133,7 +133,7 @@ async function main() {
             let folderLink = '';
             if (subListRes.data.files.length > 0) {
                 folderLink = subListRes.data.files[0].webViewLink;
-                console.log(`    文件夹已存在: ${folderLink}`);
+                console.log(`    Folder already exists: ${folderLink}`);
             } else {
                 const subCreateRes = await drive.files.create({
                     requestBody: {
@@ -144,7 +144,7 @@ async function main() {
                     fields: 'id, webViewLink',
                 });
                 folderLink = subCreateRes.data.webViewLink;
-                console.log(`    创建成功: ${folderLink}`);
+                console.log(`    Created successfully: ${folderLink}`);
             }
 
             if (folderLink) {
@@ -156,9 +156,9 @@ async function main() {
         }
     }
 
-    // 3. 批量更新 Sheets
+    // 3. Batch update Sheets
     if (updates.length > 0) {
-        console.log(`正在更新 ${updates.length} 条链接到 Google Sheets...`);
+        console.log(`Updating ${updates.length} links to Google Sheets...`);
         await sheets.spreadsheets.values.batchUpdate({
             spreadsheetId: SHEET_ID,
             requestBody: {
@@ -166,9 +166,9 @@ async function main() {
                 data: updates,
             },
         });
-        console.log('✅ 全部完成！');
+        console.log('✅ All done!');
     } else {
-        console.log('没有需要更新的记录。');
+        console.log('No records need updating.');
     }
 }
 

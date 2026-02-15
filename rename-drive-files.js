@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 
 const drive = google.drive({ version: "v3", auth: getDriveAuth() });
 const TEST_INVOICE_FOLDER_ID = "1-SfI4cPugsqOuMzgtBPwv9Ca3JVGSlc3";
@@ -77,10 +77,10 @@ async function renameFilesInDrive() {
                 supportsAllDrives: true
             });
 
-            console.log(`‚úÖ Renamed successfully\n`);
+            console.log(`‚ú?Renamed successfully\n`);
             renamedCount++;
         } catch (err) {
-            console.error(`‚ùå Error renaming ${oldName}: ${err.message}\n`);
+            console.error(`‚ù?Error renaming ${oldName}: ${err.message}\n`);
             errorCount++;
         }
     }
@@ -88,9 +88,9 @@ async function renameFilesInDrive() {
     console.log("=".repeat(50));
     console.log("RENAME COMPLETE");
     console.log("=".repeat(50));
-    console.log(`‚úÖ Renamed: ${renamedCount} files`);
+    console.log(`‚ú?Renamed: ${renamedCount} files`);
     console.log(`‚ö†Ô∏è Not found: ${notFoundCount} files`);
-    console.log(`‚ùå Errors: ${errorCount} files`);
+    console.log(`‚ù?Errors: ${errorCount} files`);
 }
 
 renameFilesInDrive().catch(console.error);

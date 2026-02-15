@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 function cleanEnv(v) {
     if (!v) return '';

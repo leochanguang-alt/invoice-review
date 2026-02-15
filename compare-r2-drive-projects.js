@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { getDriveAuth } from './api/_sheets.js';
+import { getDriveAuth } from './lib/_sheets.js';
 
 const drive = google.drive({ version: 'v3', auth: getDriveAuth() });
 
@@ -124,7 +124,7 @@ async function compare() {
         totalR2 += r2Count;
         totalDrive += driveCount;
 
-        const status = r2Count === driveCount ? '‚úÖ' : '‚ùå';
+        const status = r2Count === driveCount ? '‚ú? : '‚ù?;
         if (r2Count !== driveCount) {
             console.log(`   ${project}: R2=${r2Count}, Drive=${driveCount} ${status}`);
         } else {
@@ -138,7 +138,7 @@ async function compare() {
     console.log(`R2 projects total: ${totalR2}`);
     console.log(`Google Drive archive total: ${totalDrive}`);
     console.log(`Projects matching: ${matchCount}/${allProjects.size}`);
-    console.log(`\nOverall match: ${totalR2 === totalDrive ? '‚úÖ YES' : '‚ùå NO'}`);
+    console.log(`\nOverall match: ${totalR2 === totalDrive ? '‚ú?YES' : '‚ù?NO'}`);
 }
 
 compare().catch(console.error);

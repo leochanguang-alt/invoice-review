@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 async function verifyHash() {
     const { data, error } = await supabase
@@ -24,7 +24,7 @@ async function verifyHash() {
         .select('*', { count: 'exact', head: true })
         .not('file_ID_HASH', 'is', null);
 
-    console.log(`\nâœ… Records with file_ID_HASH: ${count}`);
+    console.log(`\nâœ?Records with file_ID_HASH: ${count}`);
 }
 
 verifyHash().catch(console.error);

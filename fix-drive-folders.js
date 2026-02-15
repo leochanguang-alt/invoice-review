@@ -1,7 +1,7 @@
 /**
- * 修复 Google Drive 文件夹名称
- * 1. 重命名 BUI-Ski-Icshgl-2512 -> BUI-Ski-Icshgl
- * 2. 删除 Test_Folder_by_AI
+ * Fix Google Drive folder names
+ * 1. Rename BUI-Ski-Icshgl-2512 -> BUI-Ski-Icshgl
+ * 2. Delete Test_Folder_by_AI
  */
 
 import 'dotenv/config';
@@ -38,18 +38,18 @@ function getDriveAuth() {
 }
 
 async function main() {
-    console.log("=== 修复 Google Drive 文件夹 ===\n");
+    console.log("=== Fix Google Drive folders ===\n");
 
     const auth = getDriveAuth();
     const drive = google.drive({ version: 'v3', auth });
 
-    // 1. 重命名文件夹 BUI-Ski-Icshgl-2512 -> BUI-Ski-Icshgl
+    // 1. Rename folder BUI-Ski-Icshgl-2512 -> BUI-Ski-Icshgl
     const oldFolderId = '1Zxc2crtysmtOa_f0tk83Pq3_WZN9DWOG';
     const newName = 'BUI-Ski-Icshgl';
 
-    console.log("[STEP 1] 重命名文件夹...");
-    console.log(`   旧名称: BUI-Ski-Icshgl-2512`);
-    console.log(`   新名称: ${newName}`);
+    console.log("[STEP 1] Renaming folder...");
+    console.log(`   Old name: BUI-Ski-Icshgl-2512`);
+    console.log(`   New name: ${newName}`);
 
     try {
         await drive.files.update({
@@ -59,29 +59,29 @@ async function main() {
             },
             supportsAllDrives: true
         });
-        console.log("   ✅ 重命名成功！\n");
+        console.log("   ✅ Rename successful!\n");
     } catch (err) {
-        console.error("   ❌ 重命名失败:", err.message);
+        console.error("   ❌ Rename failed:", err.message);
     }
 
-    // 2. 删除测试文件夹 Test_Folder_by_AI
+    // 2. Delete test folder Test_Folder_by_AI
     const testFolderId = '10gC5Pi47DhpPD310qpX_EzYD9GPUDZcY';
 
-    console.log("[STEP 2] 删除测试文件夹...");
-    console.log(`   文件夹: Test_Folder_by_AI`);
+    console.log("[STEP 2] Deleting test folder...");
+    console.log(`   Folder: Test_Folder_by_AI`);
 
     try {
         await drive.files.delete({
             fileId: testFolderId,
             supportsAllDrives: true
         });
-        console.log("   ✅ 删除成功！\n");
+        console.log("   ✅ Delete successful!\n");
     } catch (err) {
-        console.error("   ❌ 删除失败:", err.message);
+        console.error("   ❌ Delete failed:", err.message);
     }
 
-    console.log("=== 修复完成 ===\n");
-    console.log("请重新运行 check-drive-folders.js 验证结果。");
+    console.log("=== Fix complete ===\n");
+    console.log("Please run check-drive-folders.js again to verify results.");
 }
 
 main().catch(err => {

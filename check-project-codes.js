@@ -1,12 +1,12 @@
 /**
- * 检查 Main 表中的 "Charge to Project" 列是否都存在于 Projects 表的 "Project Code" 中
- * 如果不存在，将该行用黄色底色标记
+ * Check if "Charge to Project" column in Main sheet exists in Projects table's "Project Code"
+ * Mark rows with yellow background if not found
  */
 
 import 'dotenv/config';
 import { google } from 'googleapis';
 
-// 复用 _sheets.js 中的工具函数
+// Reuse utility functions from _sheets.js
 function cleanEnv(v) {
     if (!v) return "";
     v = v.trim();
@@ -76,13 +76,13 @@ async function getSheetId(sheets, sheetName) {
 }
 
 async function main() {
-    console.log("=== 检查 Charge to Project 列 ===\n");
+    console.log("=== Check Charge to Project Column ===\n");
 
     const auth = getDriveAuth();
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // 1. 获取 Projects 表的所有 Project Code
-    console.log("[STEP 1] 读取 Projects 表...");
+    // 1. Get all Project Codes from Projects table
+    console.log("[STEP 1] Reading Projects sheet...");
     const projectsRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: 'Projects!A:Z',
@@ -96,11 +96,11 @@ async function main() {
     );
 
     if (projectCodeIdx === -1) {
-        console.error("❌ Projects 表中找不到 'Project Code' 列");
+        console.error("❌ Cannot find 'Project Code' column in Projects sheet");
         return;
     }
 
-    // 收集所有有效的 Project Code (小写，用于比较)
+    // Collect all valid Project Codes (lowercase, for comparison)
     const validProjectCodes = new Set();
     for (let i = 1; i < projectsData.length; i++) {
         const code = norm(projectsData[i]?.[projectCodeIdx]);
@@ -108,10 +108,10 @@ async function main() {
             validProjectCodes.add(code.toLowerCase());
         }
     }
-    console.log(`   找到 ${validProjectCodes.size} 个有效的 Project Code\n`);
+    console.log(`   Found ${validProjectCodes.size} valid Project Codes\n`);
 
-    // 2. 获取 Main 表数据
-    console.log("[STEP 2] 读取 Main 表...");
+    // 2. Get Main sheet data
+    console.log("[STEP 2] Reading Main sheet...");
     const mainRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `${MAIN_SHEET}!A:Z`,
@@ -125,26 +125,26 @@ async function main() {
     );
 
     if (chargeToProjectIdx === -1) {
-        console.error("❌ Main 表中找不到 'Charge to Project' 列");
+        console.error("❌ Cannot find 'Charge to Project' column in Main sheet");
         return;
     }
 
-    console.log(`   Main 表共有 ${mainData.length - 1} 行数据\n`);
+    console.log(`   Main sheet has ${mainData.length - 1} rows of data\n`);
 
-    // 3. 检查每一行的 Charge to Project
-    console.log("[STEP 3] 检查无效的 Project Code...");
-    const invalidRows = []; // 存储需要标记的行号 (1-based, 包括header)
+    // 3. Check each row's Charge to Project
+    console.log("[STEP 3] Checking invalid Project Codes...");
+    const invalidRows = []; // Store row numbers to mark (1-based, including header)
 
     for (let i = 1; i < mainData.length; i++) {
         const row = mainData[i] || [];
         const chargeToProject = norm(row[chargeToProjectIdx]);
 
-        // 跳过空值
+        // Skip empty values
         if (!chargeToProject) continue;
 
-        // 检查是否存在于有效的 Project Code 中
+        // Check if exists in valid Project Codes
         if (!validProjectCodes.has(chargeToProject.toLowerCase())) {
-            const rowNum = i + 1; // 转换为1-based行号
+            const rowNum = i + 1; // Convert to 1-based row number
             invalidRows.push({
                 rowNumber: rowNum,
                 projectCode: chargeToProject,
@@ -154,28 +154,28 @@ async function main() {
     }
 
     if (invalidRows.length === 0) {
-        console.log("   ✅ 所有 Charge to Project 值都是有效的！\n");
+        console.log("   ✅ All Charge to Project values are valid!\n");
         return;
     }
 
-    console.log(`   ⚠️  发现 ${invalidRows.length} 行包含无效的 Project Code:\n`);
+    console.log(`   ⚠️  Found ${invalidRows.length} rows with invalid Project Code:\n`);
     invalidRows.forEach(r => {
-        console.log(`   - 第 ${r.rowNumber} 行: "${r.projectCode}"`);
+        console.log(`   - Row ${r.rowNumber}: "${r.projectCode}"`);
     });
     console.log("");
 
-    // 4. 使用格式化 API 将这些行标记为黄色
-    console.log("[STEP 4] 将无效行标记为黄色...");
+    // 4. Use formatting API to mark these rows yellow
+    console.log("[STEP 4] Marking invalid rows yellow...");
 
     const mainSheetId = await getSheetId(sheets, MAIN_SHEET);
 
-    // 构建批量更新请求
+    // Build batch update request
     const requests = invalidRows.map(r => ({
         repeatCell: {
             range: {
                 sheetId: mainSheetId,
                 startRowIndex: r.rowIndex,      // 0-based
-                endRowIndex: r.rowIndex + 1,    // 不包含
+                endRowIndex: r.rowIndex + 1,    // exclusive
                 startColumnIndex: 0,
                 endColumnIndex: mainHeaders.length
             },
@@ -200,13 +200,13 @@ async function main() {
         }
     });
 
-    console.log(`   ✅ 已将 ${invalidRows.length} 行标记为黄色！\n`);
+    console.log(`   ✅ Marked ${invalidRows.length} rows yellow!\n`);
 
-    // 5. 打印摘要
-    console.log("=== 摘要 ===");
-    console.log(`总行数: ${mainData.length - 1}`);
-    console.log(`无效 Project Code 行数: ${invalidRows.length}`);
-    console.log(`有效 Project Code 列表 (共 ${validProjectCodes.size} 个):`);
+    // 5. Print summary
+    console.log("=== Summary ===");
+    console.log(`Total rows: ${mainData.length - 1}`);
+    console.log(`Invalid Project Code rows: ${invalidRows.length}`);
+    console.log(`Valid Project Code list (${validProjectCodes.size} total):`);
     [...validProjectCodes].sort().forEach(code => console.log(`   - ${code}`));
 }
 

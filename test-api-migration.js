@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 async function testAPIs() {
     console.log('=== Testing Migrated APIs ===\n');
@@ -11,10 +11,10 @@ async function testAPIs() {
         .select('*', { count: 'exact', head: true });
 
     if (countErr) {
-        console.error('   âŒ Supabase connection failed:', countErr.message);
+        console.error('   â?Supabase connection failed:', countErr.message);
         return;
     }
-    console.log(`   âœ… Supabase connected. Invoice count: ${count}`);
+    console.log(`   âœ?Supabase connected. Invoice count: ${count}`);
 
     // Test 2: Test manage API - get projects
     console.log('\n2. Testing projects read from Supabase...');
@@ -24,9 +24,9 @@ async function testAPIs() {
         .limit(5);
 
     if (projErr) {
-        console.error('   âŒ Projects query failed:', projErr.message);
+        console.error('   â?Projects query failed:', projErr.message);
     } else {
-        console.log(`   âœ… Found ${projects.length} projects`);
+        console.log(`   âœ?Found ${projects.length} projects`);
         projects.forEach(p => console.log(`      - ${p.project_code}: ${p.project_name}`));
     }
 
@@ -40,9 +40,9 @@ async function testAPIs() {
         .single();
 
     if (invErr) {
-        console.error('   âŒ Invoice query failed:', invErr.message);
+        console.error('   â?Invoice query failed:', invErr.message);
     } else {
-        console.log('   âœ… Sample invoice:');
+        console.log('   âœ?Sample invoice:');
         console.log(`      ID: ${sampleInvoice.id}`);
         console.log(`      Vendor: ${sampleInvoice.vendor}`);
         console.log(`      Amount: ${sampleInvoice.amount}`);
@@ -60,9 +60,9 @@ async function testAPIs() {
         .limit(5);
 
     if (ownErr) {
-        console.error('   âŒ Owners query failed:', ownErr.message);
+        console.error('   â?Owners query failed:', ownErr.message);
     } else {
-        console.log(`   âœ… Found ${owners.length} owners`);
+        console.log(`   âœ?Found ${owners.length} owners`);
     }
 
     // Test 5: Check companies
@@ -73,9 +73,9 @@ async function testAPIs() {
         .limit(5);
 
     if (compErr) {
-        console.error('   âŒ Companies query failed:', compErr.message);
+        console.error('   â?Companies query failed:', compErr.message);
     } else {
-        console.log(`   âœ… Found ${companies.length} companies`);
+        console.log(`   âœ?Found ${companies.length} companies`);
         companies.forEach(c => console.log(`      - ${c.company_id}: ${c.company_name}`));
     }
 

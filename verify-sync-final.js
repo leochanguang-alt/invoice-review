@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 import fs from 'fs';
 import path from 'path';
 
@@ -98,10 +98,10 @@ async function finalVerification() {
     }
 
     if (allMatch) {
-        console.log("\n‚úÖ All project file names match!");
+        console.log("\n‚ú?All project file names match!");
         console.log(`   (${driveProjectFolders.length} projects verified)`);
     } else {
-        console.log(`\n‚ùå Found mismatches in ${mismatches.length} projects:`);
+        console.log(`\n‚ù?Found mismatches in ${mismatches.length} projects:`);
         for (const m of mismatches) {
             console.log(`\nüìÅ ${m.folder}:`);
             if (m.missing.length > 0) {
@@ -133,9 +133,9 @@ async function finalVerification() {
     console.log(`Local: ${localTestFiles.length} files`);
 
     if (missingTest.length === 0 && extraTest.length === 0) {
-        console.log("\n‚úÖ All Test_invoice file names match!");
+        console.log("\n‚ú?All Test_invoice file names match!");
     } else {
-        console.log(`\n‚ùå File name mismatches found:`);
+        console.log(`\n‚ù?File name mismatches found:`);
         if (missingTest.length > 0) {
             console.log(`\n   Missing locally (${missingTest.length}):`);
             missingTest.forEach(f => console.log(`     - ${f}`));
@@ -156,8 +156,8 @@ async function finalVerification() {
     const projectsOK = allMatch;
     const testOK = missingTest.length === 0 && extraTest.length === 0;
 
-    console.log(`\nProjects folder: ${projectsOK ? '‚úÖ SYNCED' : '‚ùå OUT OF SYNC'}`);
-    console.log(`Test_invoice folder: ${testOK ? '‚úÖ SYNCED' : '‚ùå OUT OF SYNC'}`);
+    console.log(`\nProjects folder: ${projectsOK ? '‚ú?SYNCED' : '‚ù?OUT OF SYNC'}`);
+    console.log(`Test_invoice folder: ${testOK ? '‚ú?SYNCED' : '‚ù?OUT OF SYNC'}`);
 
     if (projectsOK && testOK) {
         console.log("\nüéâ ALL DIRECTORIES ARE FULLY SYNCHRONIZED!");

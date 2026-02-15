@@ -1,9 +1,9 @@
 /**
- * 补写指定日期的汇率到 Supabase currency_rates
- * 用法: node backfill-currency-rates.js [日期，默认 2026-02-01]
+ * Backfill exchange rates for specified date to Supabase currency_rates
+ * Usage: node backfill-currency-rates.js [date, default 2026-02-01]
  */
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 async function getExchangeRate(fromCurrency, toCurrency = 'HKD') {
     try {
@@ -24,15 +24,15 @@ async function main() {
         process.exit(1);
     }
 
-    console.log('=== 补写汇率 ===');
-    console.log('目标日期:', dateStr, '\n');
+    console.log('=== Backfill Exchange Rates ===');
+    console.log('Target date:', dateStr, '\n');
 
     const { data: currencyRows, error: listErr } = await supabase
         .from('currency_list')
         .select('currency_code');
 
     if (listErr) {
-        console.error('读取货币列表失败:', listErr.message);
+        console.error('Failed to read currency list:', listErr.message);
         process.exit(1);
     }
 
@@ -41,7 +41,7 @@ async function main() {
         .filter(Boolean);
 
     if (currencies.length === 0) {
-        console.log('货币列表为空');
+        console.log('Currency list is empty');
         process.exit(0);
     }
 
@@ -51,7 +51,7 @@ async function main() {
         .eq('rate_date', dateStr);
 
     if (existErr) {
-        console.error('读取已存在记录失败:', existErr.message);
+        console.error('Failed to read existing records:', existErr.message);
         process.exit(1);
     }
 
@@ -60,26 +60,26 @@ async function main() {
 
     for (const currency of currencies) {
         if (existingSet.has(`${currency}_${dateStr}`)) {
-            console.log(`  ${currency}: 已存在，跳过`);
+            console.log(`  ${currency}: Already exists, skipping`);
             continue;
         }
         if (currency === 'HKD') {
             upserts.push({ currency_code: currency, rate_date: dateStr, rate_to_hkd: 1 });
-            console.log(`  ${currency}: 1 (本币)`);
+            console.log(`  ${currency}: 1 (base currency)`);
         } else {
             const rate = await getExchangeRate(currency);
             if (rate !== null) {
                 upserts.push({ currency_code: currency, rate_date: dateStr, rate_to_hkd: rate });
                 console.log(`  ${currency}: ${rate}`);
             } else {
-                console.log(`  ${currency}: 获取失败`);
+                console.log(`  ${currency}: Failed to fetch`);
             }
         }
         await new Promise(r => setTimeout(r, 200));
     }
 
     if (upserts.length === 0) {
-        console.log('\n无需写入（该日期已存在全部记录）。');
+        console.log('\nNo need to write (all records already exist for this date).');
         process.exit(0);
     }
 
@@ -88,11 +88,11 @@ async function main() {
         .upsert(upserts, { onConflict: 'currency_code,rate_date' });
 
     if (upsertErr) {
-        console.error('\n写入失败:', upsertErr.message);
+        console.error('\nWrite failed:', upsertErr.message);
         process.exit(1);
     }
 
-    console.log(`\n已写入 ${dateStr} 共 ${upserts.length} 条汇率记录。`);
+    console.log(`\nWritten ${upserts.length} exchange rate records for ${dateStr}.`);
 }
 
 main().catch(e => {

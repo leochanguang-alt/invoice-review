@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
-import { getSheetsClient, SHEET_ID, MAIN_SHEET, getDriveAuth } from './api/_sheets.js';
+import { supabase } from './lib/_supabase.js';
+import { getSheetsClient, SHEET_ID, MAIN_SHEET, getDriveAuth } from './lib/_sheets.js';
 
 // Map Sheet Columns (approximate based on knowledge)
 // Column L usually holds the Drive ID or Link in the Sheet

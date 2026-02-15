@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
-import { getSheetsClient, SHEET_ID, MAIN_SHEET, norm, buildHeaderIndex } from './api/_sheets.js';
+import { supabase } from './lib/_supabase.js';
+import { getSheetsClient, SHEET_ID, MAIN_SHEET, norm, buildHeaderIndex } from './lib/_sheets.js';
 
 async function checkSyncGap() {
     console.log('--- Starting Sync Gap Analysis ---');
@@ -33,7 +33,7 @@ async function checkSyncGap() {
 
             if (!sheetTitles.includes(targetSheet)) {
                 console.warn(`Warning: Sheet "${targetSheet}" not found.`);
-                const fallback = sheetTitles.find(t => t.toLowerCase() === 'main' || t === '工作表1');
+                const fallback = sheetTitles.find(t => t.toLowerCase() === 'main' || t === 'Sheet1');
                 if (fallback) {
                     console.log(`Using fallback sheet: "${fallback}"`);
                     targetSheet = fallback;
@@ -96,9 +96,9 @@ async function checkSyncGap() {
         });
 
         if (missingInSupa.length === 0) {
-            console.log('\n✅ NO DISCREPANCY: All sheet records found in Supabase.');
+            console.log('\n�?NO DISCREPANCY: All sheet records found in Supabase.');
         } else {
-            console.log(`\n❌ FOUND ${missingInSupa.length} DISCREPANCIES (In Sheet but NOT in Supabase):`);
+            console.log(`\n�?FOUND ${missingInSupa.length} DISCREPANCIES (In Sheet but NOT in Supabase):`);
             missingInSupa.forEach(r => {
                 const normalizedId = norm(r.fileId);
                 console.log(`- Row ${r.rowNumber}: FileID: "${normalizedId}" (len: ${normalizedId.length}), Vendor: ${r.vendor}, Amount: ${r.amount}, Status: ${r.status}`);

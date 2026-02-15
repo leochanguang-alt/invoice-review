@@ -8,6 +8,7 @@ const PAGES = {
     summary: "Dashboard",
     invoice: "Review Invoice",
     reconciliation: "Finance Reconciliation",
+    export: "Project Export",
     settings: "Account Setting"
 };
 
@@ -285,6 +286,7 @@ function setupNavigation() {
             document.getElementById('content-area').style.display = 'none';
             document.getElementById('settings-area').style.display = 'none';
             document.getElementById('invoice-review-area').style.display = 'none';
+            document.getElementById('export-area').style.display = 'none';
 
             if (page === 'summary') {
                 document.getElementById('content-area').style.display = 'block';
@@ -293,6 +295,8 @@ function setupNavigation() {
                 showSettingsPage();
             } else if (page === 'invoice') {
                 showInvoiceReviewPage();
+            } else if (page === 'export') {
+                showExportPage();
             }
         });
     });
@@ -571,10 +575,10 @@ function renderExpenseChart() {
                     },
                     callbacks: {
                         label: function(context) {
-                            return null; // 不显示分组数值
+                            return null; // Don't show group values
                         },
                         afterBody: function(tooltipItems) {
-                            // 计算并显示汇总数值
+                            // Calculate and display summary value
                             let total = 0;
                             tooltipItems.forEach(item => {
                                 total += item.raw || 0;
@@ -760,9 +764,9 @@ init();
 // ============ SETTINGS PAGE FUNCTIONS ============
 
 const SHEET_TITLES = {
-    company: "公司信息管理",
-    projects: "项目管理",
-    owner: "个人账户管理"
+    company: "Company Management",
+    projects: "Project Management",
+    owner: "Account Management"
 };
 
 let currentSheet = null;
@@ -796,7 +800,7 @@ function setupSettingsEvents() {
     // Add button
     document.getElementById('add-row-btn').onclick = () => {
         editingRow = null;
-        showEditModal("添加记录");
+        showEditModal("Add Record");
     };
 
     // Fix folders button (only for projects)
@@ -849,11 +853,11 @@ async function loadManageView() {
             
             renderManageTable();
         } else {
-            alert("加载失败: " + json.message);
+            alert("Load failed: " + json.message);
         }
     } catch (e) {
         console.error(e);
-        alert("加载失败");
+        alert("Load failed");
     }
 }
 
@@ -861,10 +865,10 @@ function renderManageTable() {
     const headerRow = document.getElementById('manage-header');
     const body = document.getElementById('manage-body');
 
-    headerRow.innerHTML = currentHeaders.map(h => `<th>${h}</th>`).join('') + '<th>操作</th>';
+    headerRow.innerHTML = currentHeaders.map(h => `<th>${h}</th>`).join('') + '<th>Actions</th>';
 
     if (currentData.length === 0) {
-        body.innerHTML = `<tr><td colspan="${currentHeaders.length + 1}" style="text-align:center">暂无数据</td></tr>`;
+        body.innerHTML = `<tr><td colspan="${currentHeaders.length + 1}" style="text-align:center">No data</td></tr>`;
         return;
     }
 
@@ -873,16 +877,13 @@ function renderManageTable() {
         
         if (currentSheet === 'owner') {
             // Personal account - only edit button, no delete
-            buttons = `<button class="btn-small btn-edit" data-row="${row._rowNumber}">修改</button>`;
+            buttons = `<button class="btn-small btn-edit" data-row="${row._rowNumber}">Edit</button>`;
         } else if (currentSheet === 'projects') {
-            buttons = `
-                <button class="btn-small btn-edit" data-row="${row._rowNumber}">修改</button>
-                <button class="btn-small btn-view" data-row="${row._rowNumber}">查看</button>
-            `;
+            buttons = `<button class="btn-small btn-edit" data-row="${row._rowNumber}">Edit</button> <button class="btn-small btn-view" data-row="${row._rowNumber}">View</button>`;
         } else {
             buttons = `
-                <button class="btn-small btn-edit" data-row="${row._rowNumber}">修改</button>
-                <button class="btn-small btn-delete" data-row="${row._rowNumber}">删除</button>
+                <button class="btn-small btn-edit" data-row="${row._rowNumber}">Edit</button>
+                <button class="btn-small btn-delete" data-row="${row._rowNumber}">Delete</button>
             `;
         }
 
@@ -900,7 +901,7 @@ function renderManageTable() {
             const rowNum = btn.dataset.row;
             const rowData = currentData.find(r => String(r._rowNumber) === rowNum);
             editingRow = rowNum;
-            showEditModal("修改记录", rowData);
+            showEditModal("Edit Record", rowData);
         };
     });
 
@@ -909,13 +910,13 @@ function renderManageTable() {
             const rowNum = btn.dataset.row;
             const rowData = currentData.find(r => String(r._rowNumber) === rowNum);
             editingRow = rowNum;
-            showEditModal("查看详情", rowData, true);
+            showEditModal("View Details", rowData, true);
         };
     });
 
     body.querySelectorAll('.btn-delete').forEach(btn => {
         btn.onclick = async () => {
-            if (!confirm("确定删除此记录?")) return;
+            if (!confirm("Are you sure you want to delete this record?")) return;
             const rowNum = btn.dataset.row;
             await deleteRow(rowNum);
         };
@@ -993,6 +994,7 @@ async function showEditModal(title, rowData = {}, isViewMode = false) {
         const isOwnerId = (fieldLowerNorm === 'ownerid') && currentSheet === 'owner';
         const isOwnerName = fieldLowerNorm === 'owner' && currentSheet === 'owner';
         const isMobileField = fieldLowerNorm === 'mobile' && currentSheet === 'owner';
+        const isStatusField = (fieldLowerNorm === 'status') && currentSheet === 'projects';
 
         // Skip Owner ID in display (it's auto-generated)
         if (isOwnerId) {
@@ -1007,7 +1009,7 @@ async function showEditModal(title, rowData = {}, isViewMode = false) {
             fieldsHtml += `<div class="edit-field-group">
                 <label class="edit-field-label">${h}</label>
                 <input type="text" name="${h}" id="project-id-field" value="${projectIdValue}" readonly class="edit-input readonly" />
-                <small class="edit-field-hint">自动生成: 6位大写字母 (唯一)</small>
+                <small class="edit-field-hint">Auto-generated: 6 uppercase letters (unique)</small>
             </div>`;
             continue;
         }
@@ -1018,19 +1020,19 @@ async function showEditModal(title, rowData = {}, isViewMode = false) {
         if (isOwnerName) {
             // Owner is auto-generated from First Name + Last Name (readonly)
             fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />
-            <small class="edit-field-hint">自动生成: First Name + Last Name</small>`;
+            <small class="edit-field-hint">Auto-generated: First Name + Last Name</small>`;
         } else if (isMobileField) {
             // Mobile with country code prefix
             const mobileValue = value || '+86';
             fieldsHtml += `<input type="text" name="${h}" value="${mobileValue}" class="edit-input" placeholder="+86 13800138000" />
-            <small class="edit-field-hint">格式: +国家区号 手机号 (默认 +86)</small>`;
+            <small class="edit-field-hint">Format: +country code phone number (default +86)</small>`;
         } else if (isProjectCodeField) {
             fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />
-            <small class="edit-field-hint">自动生成: Company Code + Project Name</small>`;
+            <small class="edit-field-hint">Auto-generated: Company Code + Project Name</small>`;
         } else if (isCompanyField) {
             const isReadonly = isViewMode || (editingRow && currentSheet === 'projects');
             fieldsHtml += `<select name="${h}" ${isReadonly ? 'disabled' : ''} class="edit-select ${isReadonly ? 'readonly' : ''}">
-                <option value="">-- 请选择 --</option>
+                <option value="">-- Please select --</option>
                 ${companyList.map(c => {
                 const companyID = c['Company_ID'] || c['Company ID'] || c['Company_Code'] || c['Code'] || '';
                 const selected = companyID === value ? 'selected' : '';
@@ -1040,10 +1042,22 @@ async function showEditModal(title, rowData = {}, isViewMode = false) {
             if (isReadonly) {
                 fieldsHtml += `<input type="hidden" name="${h}" value="${value}" />`;
             }
+        } else if (isStatusField) {
+            // Status field - dropdown for Active/Achieved
+            const isActiveSelected = value === 'Active' || !value ? 'selected' : '';
+            const isAchievedSelected = value === 'Achieved' ? 'selected' : '';
+            if (isViewMode) {
+                fieldsHtml += `<input type="text" name="${h}" value="${value || 'Active'}" readonly class="edit-input readonly" />`;
+            } else {
+                fieldsHtml += `<select name="${h}" class="edit-select">
+                    <option value="Active" ${isActiveSelected}>Active</option>
+                    <option value="Achieved" ${isAchievedSelected}>Achieved</option>
+                </select>`;
+            }
         } else if (isProjectNameField && (editingRow || isViewMode)) {
             // Project Name becomes readonly after creation or in view mode
             fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />
-            ${isViewMode ? '' : '<small class="edit-field-hint">项目创建后不可修改名称</small>'}`;
+            ${isViewMode ? '' : '<small class="edit-field-hint">Project name cannot be modified after creation</small>'}`;
         } else if (isViewMode) {
             // All other fields in view mode
             fieldsHtml += `<input type="text" name="${h}" value="${value}" readonly class="edit-input readonly" />`;
@@ -1159,7 +1173,7 @@ async function saveRow() {
         isSaving = true;
         if (saveBtn) {
             saveBtn.disabled = true;
-            saveBtn.innerText = '正在保存...';
+            saveBtn.innerText = 'Saving...';
         }
 
         const action = editingRow ? "update" : "add";
@@ -1173,11 +1187,11 @@ async function saveRow() {
             document.getElementById('edit-modal').style.display = 'none';
             await loadManageView();
         } else {
-            alert("保存失败: " + json.message);
+            alert("Save failed: " + json.message);
         }
     } catch (e) {
         console.error(e);
-        alert("保存失败");
+        alert("Save failed");
     } finally {
         isSaving = false;
         if (saveBtn) {
@@ -1198,11 +1212,11 @@ async function deleteRow(rowNumber) {
         if (json.success) {
             await loadManageView();
         } else {
-            alert("删除失败: " + json.message);
+            alert("Delete failed: " + json.message);
         }
     } catch (e) {
         console.error(e);
-        alert("删除失败");
+        alert("Delete failed");
     }
 }
 
@@ -1213,7 +1227,7 @@ async function fixMissingFolders() {
     
     try {
         btn.disabled = true;
-        btn.innerText = '检查中...';
+        btn.innerText = 'Checking...';
 
         // First, check status
         const checkRes = await fetch('/api/manage', {
@@ -1224,19 +1238,19 @@ async function fixMissingFolders() {
         const checkJson = await checkRes.json();
 
         if (!checkJson.success) {
-            alert('检查失败: ' + checkJson.message);
+            alert('Check failed: ' + checkJson.message);
             return;
         }
 
         if (checkJson.missing_count === 0) {
-            alert('所有项目都已有文件夹链接！');
+            alert('All projects already have folder links!');
             return;
         }
 
-        const confirmed = confirm(`发现 ${checkJson.missing_count} 个项目缺少文件夹链接。\n是否立即修复？`);
+        const confirmed = confirm(`Found ${checkJson.missing_count} projects missing folder links.\nFix now?`);
         if (!confirmed) return;
 
-        btn.innerText = '修复中...';
+        btn.innerText = 'Fixing...';
 
         // Fix missing folders
         const fixRes = await fetch('/api/manage', {
@@ -1247,14 +1261,14 @@ async function fixMissingFolders() {
         const fixJson = await fixRes.json();
 
         if (fixJson.success) {
-            alert(`修复完成！\n成功: ${fixJson.fixed} 个\n失败: ${fixJson.errors} 个`);
+            alert(`Fix complete!\nSuccess: ${fixJson.fixed}\nFailed: ${fixJson.errors}`);
             await loadManageView(); // Reload to show updated data
         } else {
-            alert('修复失败: ' + fixJson.message);
+            alert('Fix failed: ' + fixJson.message);
         }
     } catch (e) {
         console.error('Fix folders error:', e);
-        alert('修复失败: ' + e.message);
+        alert('Fix failed: ' + e.message);
     } finally {
         btn.disabled = false;
         btn.innerText = originalText;
@@ -1874,10 +1888,11 @@ function filterProjectsByCompany(selectedValue) {
         return;
     }
 
-    // Filter projects by Company_ID field (case-insensitive)
+    // Filter projects by Company_ID field (case-insensitive) and exclude archived projects
     const filteredProjects = projectsList.filter(p => {
         const projectCompanyId = (p['Company_ID'] || p['Company ID'] || '').toLowerCase();
-        return projectCompanyId === selectedCompanyId.toLowerCase();
+        const isArchived = p.archived === true || p['archived'] === true || p.Status === 'Achieved';
+        return projectCompanyId === selectedCompanyId.toLowerCase() && !isArchived;
     });
 
     if (filteredProjects.length === 0) {
@@ -2208,4 +2223,631 @@ async function confirmReviewedInvoices() {
 // Make functions globally accessible
 window.filterProjectsByCompany = filterProjectsByCompany;
 window.saveRecordChanges = saveRecordChanges;
+
+// ============ EXPORT PAGE FUNCTIONS ============
+
+let exportProjectsData = [];
+let currentExportProject = null;
+
+async function showExportPage() {
+    document.getElementById('export-area').style.display = 'block';
+    await loadExportProjectData();
+}
+
+// Store all invoices data for export page
+let allInvoicesData = [];
+
+async function loadExportProjectData() {
+    const tbody = document.getElementById('export-table-body');
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Loading...</td></tr>';
+
+    try {
+        // Load projects
+        const projectsRes = await fetch('/api/manage?sheet=projects');
+        const projectsJson = await projectsRes.json();
+
+        // Load invoices for date ranges and totals
+        const invoicesRes = await fetch('/api/expenses');
+        const invoicesJson = await invoicesRes.json();
+
+        // Load owners for name lookup
+        const ownersRes = await fetch('/api/manage?sheet=owner');
+        const ownersJson = await ownersRes.json();
+
+        if (!projectsJson.success || !invoicesJson.success) {
+            throw new Error('Failed to load data');
+        }
+
+        const projects = projectsJson.data || [];
+        const invoices = invoicesJson.data || [];
+        const owners = ownersJson.data || [];
+
+        // Store invoices for review functionality
+        allInvoicesData = invoices;
+
+        // Create owner lookup map
+        const ownerMap = {};
+        owners.forEach(o => {
+            const id = o['Owner ID'] || o.owner_id || '';
+            const name = o['Owner'] || o.owner_name || '';
+            if (id) ownerMap[id] = name;
+        });
+
+        // Calculate project stats from invoices
+        const projectStats = {};
+        invoices.forEach(inv => {
+            const projId = inv['Charge to Project'] || inv['charge_to_project'] || inv['Project'] || inv['project_id'];
+            if (!projId) return;
+
+            if (!projectStats[projId]) {
+                projectStats[projId] = {
+                    minDate: null,
+                    maxDate: null,
+                    totalAmount: 0,
+                    invoiceCount: 0
+                };
+            }
+
+            const invDate = inv['Invoice Date'] || inv['invoice_date'];
+            if (invDate) {
+                const d = new Date(invDate);
+                if (!projectStats[projId].minDate || d < projectStats[projId].minDate) {
+                    projectStats[projId].minDate = d;
+                }
+                if (!projectStats[projId].maxDate || d > projectStats[projId].maxDate) {
+                    projectStats[projId].maxDate = d;
+                }
+            }
+
+            // Sum up original amounts (using Amount or Amount(HKD))
+            const amount = parseFloat(inv['Amount(HKD)'] || inv['Amount'] || inv['amount'] || 0);
+            if (!isNaN(amount)) {
+                projectStats[projId].totalAmount += amount;
+            }
+            projectStats[projId].invoiceCount++;
+        });
+
+        // Build export projects data
+        exportProjectsData = projects.map(p => {
+            const projId = p.project_id || p['Project_ID'];
+            const projCode = p.project_code || p['Project Code'] || '';
+            const ownerId = p.project_owner || p['Project Owner'] || '';
+            // Stats are keyed by project code (from 'Charge to Project' field in invoices)
+            const stats = projectStats[projCode] || projectStats[projId] || { minDate: null, maxDate: null, totalAmount: 0, invoiceCount: 0 };
+
+            return {
+                project_id: projId,
+                project_code: projCode,
+                project_name: p.project_name || p['Project Name'] || '',
+                company_id: p.company_id || p['Company_ID'] || '',
+                owner_id: ownerId,
+                owner_name: ownerMap[ownerId] || ownerId || '-',
+                start_date: stats.minDate ? stats.minDate.toISOString().split('T')[0] : '-',
+                end_date: stats.maxDate ? stats.maxDate.toISOString().split('T')[0] : '-',
+                total_amount: stats.totalAmount,
+                invoice_count: stats.invoiceCount,
+                archived: p.archived || p.Status === 'Achieved' || false,
+                drive_folder_link: p.drive_folder_link || ''
+            };
+        });
+
+        // Sort by project code
+        exportProjectsData.sort((a, b) => (a.project_code || '').localeCompare(b.project_code || ''));
+
+        // Render table
+        renderExportTable();
+
+    } catch (err) {
+        console.error('Error loading export data:', err);
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:red;">Failed to load: ' + err.message + '</td></tr>';
+    }
+}
+
+function renderExportTable() {
+    const tbody = document.getElementById('export-table-body');
+
+    if (exportProjectsData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No project data</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = exportProjectsData.map(p => `
+        <tr data-project-id="${p.project_id}">
+            <td>
+                <div class="export-btn-group">
+                    <button class="btn-export" onclick="showExportConfirmModal('${p.project_id}')">Export</button>
+                    <button class="btn-review" onclick="showProjectReviewModal('${p.project_id}')">Review</button>
+                    <button class="btn-archive ${p.archived ? 'archived' : ''}" onclick="showArchiveConfirmModal('${p.project_id}')">
+                        ${p.archived ? 'Archived' : 'Archive'}
+                    </button>
+                </div>
+            </td>
+            <td>${p.project_id}</td>
+            <td>${p.project_code}</td>
+            <td>${p.company_id || '-'}</td>
+            <td>${p.owner_name}</td>
+            <td>${p.start_date}</td>
+            <td>${p.end_date}</td>
+            <td class="amount-cell">${p.total_amount.toFixed(2)}</td>
+            <td>
+                <span class="status-badge ${p.archived ? 'archived' : 'active'}">
+                    ${p.archived ? 'Archived' : 'Active'}
+                </span>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showExportConfirmModal(projectId) {
+    currentExportProject = exportProjectsData.find(p => p.project_id === projectId);
+    if (!currentExportProject) return;
+
+    document.getElementById('export-project-name').textContent =
+        `${currentExportProject.project_code}`;
+    document.getElementById('export-confirm-modal').style.display = 'flex';
+}
+
+function showArchiveConfirmModal(projectId) {
+    currentExportProject = exportProjectsData.find(p => p.project_id === projectId);
+    if (!currentExportProject) return;
+
+    if (currentExportProject.archived) {
+        // Already archived, ask to unarchive
+        if (confirm(`Project "${currentExportProject.project_name}" is archived. Do you want to unarchive it?`)) {
+            toggleArchiveProject(projectId, false);
+        }
+        return;
+    }
+
+    document.getElementById('archive-project-name').textContent =
+        `${currentExportProject.project_code} - ${currentExportProject.project_name}`;
+    document.getElementById('archive-confirm-modal').style.display = 'flex';
+}
+
+async function executeExport() {
+    if (!currentExportProject) return;
+
+    document.getElementById('export-confirm-modal').style.display = 'none';
+    document.getElementById('export-progress-modal').style.display = 'flex';
+
+    const progressFill = document.getElementById('export-progress-fill');
+    const progressStatus = document.getElementById('export-progress-status');
+
+    try {
+        progressStatus.textContent = 'Fetching invoice data...';
+        progressFill.style.width = '20%';
+
+        // Fetch invoices for this project
+        const invoicesRes = await fetch('/api/expenses');
+        const invoicesJson = await invoicesRes.json();
+
+        if (!invoicesJson.success) {
+            throw new Error('Failed to fetch invoices');
+        }
+
+        const projectCode = currentExportProject.project_code;
+        const projectInvoices = (invoicesJson.data || []).filter(inv => {
+            const projId = inv['Charge to Project'] || inv['charge_to_project'] || inv['Project'] || inv['project_id'];
+            return projId === currentExportProject.project_id || projId === projectCode;
+        });
+
+        progressStatus.textContent = 'Generating Excel file...';
+        progressFill.style.width = '40%';
+
+        // Prepare Excel data with full R2 path
+        const excelData = projectInvoices.map(inv => {
+            // Build full R2 path from achieved_file_id (archived file in project folder)
+            let r2FilePath = '';
+            const achievedFileId = inv['achieved_file_id'] || '';
+            const achievedFileLink = inv['achieved_file_link'] || '';
+            const generatedInvoiceId = inv['generated_invoice_id'] || inv['Invoice ID'] || '';
+
+            if (achievedFileId) {
+                // achieved_file_id contains the R2 key path
+                if (achievedFileId.startsWith('bui_invoice/')) {
+                    r2FilePath = `buiservice-assets/${achievedFileId}`;
+                } else if (achievedFileId.includes('/')) {
+                    r2FilePath = achievedFileId;
+                } else {
+                    // It's just a filename or hash, build full path
+                    r2FilePath = `buiservice-assets/bui_invoice/projects/${projectCode}/${generatedInvoiceId}.pdf`;
+                }
+            } else if (achievedFileLink) {
+                // Extract path from achieved_file_link URL
+                const pathMatch = achievedFileLink.match(/(bui_invoice\/projects\/[^?]+)/);
+                r2FilePath = pathMatch ? `buiservice-assets/${pathMatch[1]}` : '';
+            } else if (generatedInvoiceId && projectCode) {
+                // Fallback: Generate expected R2 path based on generated invoice ID
+                r2FilePath = `buiservice-assets/bui_invoice/projects/${projectCode}/${generatedInvoiceId}.pdf`;
+            }
+
+            return {
+                'Date': inv['Invoice Date'] || inv['invoice_date'] || '',
+                'Vendor': inv['Vender'] || inv['Vendor'] || inv['vendor'] || '',
+                'Original Amount': `${inv['Amount'] || ''} ${inv['Currency'] || ''}`.trim(),
+                'Category': inv['Category'] || inv['category'] || '',
+                'Owner': inv['Owner'] || inv['owner'] || '',
+                'R2 File Path': r2FilePath
+            };
+        });
+
+        // Generate Excel using simple CSV format (can be opened in Excel)
+        const csvContent = generateCSV(excelData);
+        const csvBlob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
+
+        progressStatus.textContent = 'Downloading Excel file...';
+        progressFill.style.width = '50%';
+
+        // Download CSV
+        const csvUrl = URL.createObjectURL(csvBlob);
+        const csvLink = document.createElement('a');
+        csvLink.href = csvUrl;
+        csvLink.download = `${projectCode}_expenses.csv`;
+        csvLink.click();
+        URL.revokeObjectURL(csvUrl);
+
+        progressStatus.textContent = 'Downloading ZIP archive...';
+        progressFill.style.width = '70%';
+
+        // Download ZIP from server
+        try {
+            const zipResponse = await fetch(`/api/export-zip?project=${encodeURIComponent(projectCode)}`);
+            
+            if (zipResponse.ok) {
+                const zipBlob = await zipResponse.blob();
+                const zipUrl = URL.createObjectURL(zipBlob);
+                const zipLink = document.createElement('a');
+                zipLink.href = zipUrl;
+                zipLink.download = `${projectCode}_files.zip`;
+                zipLink.click();
+                URL.revokeObjectURL(zipUrl);
+                
+                progressStatus.textContent = 'Export complete!';
+                progressFill.style.width = '100%';
+                
+                setTimeout(() => {
+                    document.getElementById('export-progress-modal').style.display = 'none';
+                    progressFill.style.width = '0%';
+                    alert('Excel report and ZIP archive have been downloaded successfully!');
+                }, 1000);
+            } else {
+                const errData = await zipResponse.json().catch(() => ({ error: 'Unknown error' }));
+                console.warn('ZIP download failed:', errData);
+                
+                progressStatus.textContent = 'Export complete (CSV only)';
+                progressFill.style.width = '100%';
+                
+                setTimeout(() => {
+                    document.getElementById('export-progress-modal').style.display = 'none';
+                    progressFill.style.width = '0%';
+                    alert(`Excel report downloaded.\n\nZIP archive failed: ${errData.error || errData.message || 'No files found in project folder'}`);
+                }, 1000);
+            }
+        } catch (zipErr) {
+            console.warn('ZIP download error:', zipErr);
+            
+            progressStatus.textContent = 'Export complete (CSV only)';
+            progressFill.style.width = '100%';
+            
+            setTimeout(() => {
+                document.getElementById('export-progress-modal').style.display = 'none';
+                progressFill.style.width = '0%';
+                alert(`Excel report downloaded.\n\nZIP archive failed: ${zipErr.message}`);
+            }, 1000);
+        }
+
+    } catch (err) {
+        console.error('Export error:', err);
+        progressStatus.textContent = 'Export failed: ' + err.message;
+        progressFill.style.background = '#f44336';
+        setTimeout(() => {
+            document.getElementById('export-progress-modal').style.display = 'none';
+            progressFill.style.width = '0%';
+            progressFill.style.background = '';
+        }, 2000);
+    }
+}
+
+function generateCSV(data) {
+    if (data.length === 0) return '';
+
+    const headers = Object.keys(data[0]);
+    const rows = data.map(row =>
+        headers.map(h => {
+            let val = row[h] || '';
+            // Escape quotes and wrap in quotes if contains comma
+            if (typeof val === 'string' && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
+                val = '"' + val.replace(/"/g, '""') + '"';
+            }
+            return val;
+        }).join(',')
+    );
+
+    return [headers.join(','), ...rows].join('\n');
+}
+
+// ==================== Project Review Modal Functions ====================
+let currentReviewProject = null;
+let selectedInvoiceIds = new Set();
+
+function showProjectReviewModal(projectId) {
+    currentReviewProject = exportProjectsData.find(p => p.project_id === projectId);
+    if (!currentReviewProject) return;
+
+    selectedInvoiceIds.clear();
+    updateSelectedCount();
+
+    document.getElementById('review-project-title').textContent = currentReviewProject.project_code;
+    document.getElementById('project-review-modal').style.display = 'flex';
+
+    loadProjectInvoicesForReview();
+}
+
+function loadProjectInvoicesForReview() {
+    const tbody = document.getElementById('review-invoices-body');
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Loading...</td></tr>';
+
+    const projectCode = currentReviewProject.project_code;
+    const projectInvoices = allInvoicesData.filter(inv => {
+        const projId = inv['Charge to Project'] || inv['charge_to_project'] || inv['Project'] || inv['project_id'];
+        return projId === currentReviewProject.project_id || projId === projectCode;
+    });
+
+    if (projectInvoices.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No invoice records for this project</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = projectInvoices.map(inv => {
+        const invoiceId = inv['Invoice ID'] || inv['generated_invoice_id'] || '';
+        const fileLink = inv['file_link_r2'] || '';
+        let r2Display = '';
+
+        if (fileLink) {
+            // Extract filename from R2 link
+            const fileName = fileLink.split('/').pop().split('?')[0];
+            r2Display = `<a href="${fileLink}" target="_blank" class="r2-file-link">${fileName}</a>`;
+        }
+
+        return `
+            <tr data-invoice-id="${invoiceId}">
+                <td>
+                    <input type="checkbox" class="invoice-checkbox" data-id="${invoiceId}"
+                        onchange="toggleInvoiceSelection('${invoiceId}')">
+                </td>
+                <td>${invoiceId}</td>
+                <td>${inv['Invoice Date'] || inv['invoice_date'] || '-'}</td>
+                <td>${inv['Vender'] || inv['Vendor'] || inv['vendor'] || '-'}</td>
+                <td>${inv['Amount'] || '-'}</td>
+                <td>${inv['Currency'] || '-'}</td>
+                <td>${inv['Category'] || inv['category'] || '-'}</td>
+                <td>${inv['Owner'] || inv['owner'] || '-'}</td>
+                <td>${r2Display || '-'}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // Reset select all checkbox
+    document.getElementById('select-all-invoices').checked = false;
+}
+
+function toggleInvoiceSelection(invoiceId) {
+    if (selectedInvoiceIds.has(invoiceId)) {
+        selectedInvoiceIds.delete(invoiceId);
+    } else {
+        selectedInvoiceIds.add(invoiceId);
+    }
+    updateSelectedCount();
+    updateSelectAllState();
+}
+
+function updateSelectedCount() {
+    const countEl = document.getElementById('selected-count');
+    countEl.textContent = `Selected: ${selectedInvoiceIds.size} items`;
+
+    const rejectBtn = document.getElementById('reject-selected-btn');
+    rejectBtn.disabled = selectedInvoiceIds.size === 0;
+}
+
+function updateSelectAllState() {
+    const allCheckboxes = document.querySelectorAll('.invoice-checkbox');
+    const selectAllCheckbox = document.getElementById('select-all-invoices');
+
+    if (allCheckboxes.length === 0) {
+        selectAllCheckbox.checked = false;
+        return;
+    }
+
+    const allChecked = Array.from(allCheckboxes).every(cb => cb.checked);
+    selectAllCheckbox.checked = allChecked;
+}
+
+function toggleSelectAllInvoices() {
+    const selectAllCheckbox = document.getElementById('select-all-invoices');
+    const allCheckboxes = document.querySelectorAll('.invoice-checkbox');
+
+    allCheckboxes.forEach(cb => {
+        cb.checked = selectAllCheckbox.checked;
+        const invoiceId = cb.dataset.id;
+        if (selectAllCheckbox.checked) {
+            selectedInvoiceIds.add(invoiceId);
+        } else {
+            selectedInvoiceIds.delete(invoiceId);
+        }
+    });
+
+    updateSelectedCount();
+}
+
+function showRejectConfirmModal() {
+    if (selectedInvoiceIds.size === 0) return;
+
+    document.getElementById('reject-count').textContent = selectedInvoiceIds.size;
+    document.getElementById('reject-confirm-modal').style.display = 'flex';
+}
+
+function closeRejectConfirmModal() {
+    document.getElementById('reject-confirm-modal').style.display = 'none';
+}
+
+async function executeRejectInvoices() {
+    closeRejectConfirmModal();
+
+    const invoiceIdsArray = Array.from(selectedInvoiceIds);
+
+    try {
+        // Show loading state
+        const rejectBtn = document.getElementById('reject-selected-btn');
+        rejectBtn.textContent = 'Processing...';
+        rejectBtn.disabled = true;
+
+        // Call API to reject invoices
+        const response = await fetch('/api/manage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'reject-invoices',
+                invoiceIds: invoiceIdsArray,
+                projectCode: currentReviewProject.project_code
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(`Successfully rejected ${invoiceIdsArray.length} records`);
+            // Reload data
+            selectedInvoiceIds.clear();
+            await loadExportProjectData();
+            loadProjectInvoicesForReview();
+        } else {
+            throw new Error(result.message || 'Reject failed');
+        }
+
+    } catch (err) {
+        console.error('Reject error:', err);
+        alert('Reject failed: ' + err.message);
+    } finally {
+        const rejectBtn = document.getElementById('reject-selected-btn');
+        rejectBtn.textContent = 'Reject Selected';
+        updateSelectedCount();
+    }
+}
+
+function closeProjectReviewModal() {
+    document.getElementById('project-review-modal').style.display = 'none';
+    currentReviewProject = null;
+    selectedInvoiceIds.clear();
+}
+
+// Initialize review modal event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Close review modal button
+    const closeReviewBtn = document.getElementById('close-review-modal');
+    if (closeReviewBtn) {
+        closeReviewBtn.addEventListener('click', closeProjectReviewModal);
+    }
+
+    // Select all checkbox
+    const selectAllCheckbox = document.getElementById('select-all-invoices');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', toggleSelectAllInvoices);
+    }
+
+    // Reject button
+    const rejectBtn = document.getElementById('reject-selected-btn');
+    if (rejectBtn) {
+        rejectBtn.addEventListener('click', showRejectConfirmModal);
+    }
+
+    // Reject confirm buttons
+    const rejectConfirmYes = document.getElementById('reject-confirm-yes');
+    if (rejectConfirmYes) {
+        rejectConfirmYes.addEventListener('click', executeRejectInvoices);
+    }
+
+    const rejectConfirmNo = document.getElementById('reject-confirm-no');
+    if (rejectConfirmNo) {
+        rejectConfirmNo.addEventListener('click', closeRejectConfirmModal);
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('project-review-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeProjectReviewModal();
+    });
+
+    document.getElementById('reject-confirm-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeRejectConfirmModal();
+    });
+});
+// ==================== End Project Review Modal Functions ====================
+
+async function toggleArchiveProject(projectId, archived) {
+    try {
+        const res = await fetch('/api/manage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'update',
+                sheet: 'projects',
+                rowNumber: projectId,
+                data: { archived: archived }
+            })
+        });
+
+        const json = await res.json();
+        if (json.success) {
+            // Update local data
+            const proj = exportProjectsData.find(p => p.project_id === projectId);
+            if (proj) {
+                proj.archived = archived;
+            }
+            renderExportTable();
+            alert(archived ? 'Project archived' : 'Project unarchived');
+        } else {
+            throw new Error(json.message || 'Update failed');
+        }
+    } catch (err) {
+        console.error('Archive error:', err);
+        alert('Operation failed: ' + err.message);
+    }
+}
+
+async function confirmArchiveProject() {
+    if (!currentExportProject) return;
+
+    document.getElementById('archive-confirm-modal').style.display = 'none';
+    await toggleArchiveProject(currentExportProject.project_id, true);
+}
+
+// Export modal event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    // Export confirm modal
+    const exportConfirmYes = document.getElementById('export-confirm-yes');
+    const exportConfirmNo = document.getElementById('export-confirm-no');
+    if (exportConfirmYes) {
+        exportConfirmYes.addEventListener('click', executeExport);
+    }
+    if (exportConfirmNo) {
+        exportConfirmNo.addEventListener('click', () => {
+            document.getElementById('export-confirm-modal').style.display = 'none';
+        });
+    }
+
+    // Archive confirm modal
+    const archiveConfirmYes = document.getElementById('archive-confirm-yes');
+    const archiveConfirmNo = document.getElementById('archive-confirm-no');
+    if (archiveConfirmYes) {
+        archiveConfirmYes.addEventListener('click', confirmArchiveProject);
+    }
+    if (archiveConfirmNo) {
+        archiveConfirmNo.addEventListener('click', () => {
+            document.getElementById('archive-confirm-modal').style.display = 'none';
+        });
+    }
+});
+
+// Make export functions globally accessible
+window.showExportConfirmModal = showExportConfirmModal;
+window.showArchiveConfirmModal = showArchiveConfirmModal;
 

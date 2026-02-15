@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 import { S3Client, CopyObjectCommand } from "@aws-sdk/client-s3";
 
 const r2 = new S3Client({

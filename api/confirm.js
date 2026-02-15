@@ -1,4 +1,4 @@
-import { supabase } from "./_supabase.js";
+import { supabase } from "../lib/_supabase.js";
 
 const CONFIRMED_STATUS = process.env.CONFIRMED_STATUS || "Confirmed";
 

@@ -1,7 +1,7 @@
 /**
- * 一次性脚本：为现有的 Projects 表填充 ProjectID
+ * One-time script: Fill in ProjectID for existing Projects table
  * 
- * 用法: node backfill-project-ids.js
+ * Usage: node backfill-project-ids.js
  */
 
 import 'dotenv/config';
@@ -10,7 +10,7 @@ import { google } from 'googleapis';
 const SHEET_ID = process.env.SHEET_ID;
 const PROJECTS_SHEET = 'Projects';
 
-// 生成随机6位大写字母ID
+// Generate random 6-character uppercase letter ID
 function generateRandomId(length = 6) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     let result = '';
@@ -20,7 +20,7 @@ function generateRandomId(length = 6) {
     return result;
 }
 
-// 清理环境变量
+// Clean environment variable
 function cleanEnv(v) {
     if (!v) return '';
     v = v.trim();
@@ -32,7 +32,7 @@ function cleanEnv(v) {
     return v;
 }
 
-// 获取 Sheets 客户端
+// Get Sheets client
 function getSheetsClient() {
     const email = cleanEnv(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
     let key = cleanEnv(process.env.GOOGLE_PRIVATE_KEY);
@@ -47,7 +47,7 @@ function getSheetsClient() {
     return google.sheets({ version: 'v4', auth });
 }
 
-// 列号转A1格式
+// Convert column number to A1 format
 function toA1Column(n) {
     let s = '';
     while (n > 0) {
@@ -59,10 +59,10 @@ function toA1Column(n) {
 }
 
 async function main() {
-    console.log('正在连接 Google Sheets...');
+    console.log('Connecting to Google Sheets...');
     const sheets = getSheetsClient();
 
-    // 读取所有数据
+    // Read all data
     const dataRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `${PROJECTS_SHEET}!A:Z`,
@@ -71,7 +71,7 @@ async function main() {
 
     const values = dataRes.data.values || [];
     if (values.length === 0) {
-        console.log('Projects 表为空');
+        console.log('Projects sheet is empty');
         return;
     }
 
@@ -79,27 +79,27 @@ async function main() {
     const projectIdColIdx = headers.findIndex(h => h === 'projectid' || h === 'project id' || h === 'project_id');
 
     if (projectIdColIdx === -1) {
-        console.error('找不到 ProjectID 列！请检查表头。');
+        console.error('Cannot find ProjectID column! Please check header.');
         return;
     }
 
-    console.log(`ProjectID 列位置: 第 ${projectIdColIdx + 1} 列 (${toA1Column(projectIdColIdx + 1)})`);
+    console.log(`ProjectID column position: column ${projectIdColIdx + 1} (${toA1Column(projectIdColIdx + 1)})`);
 
-    // 收集已有的 ID
+    // Collect existing IDs
     const existingIds = new Set();
     for (let i = 1; i < values.length; i++) {
         const id = (values[i][projectIdColIdx] || '').trim().toUpperCase();
         if (id) existingIds.add(id);
     }
 
-    console.log(`现有 ID 数量: ${existingIds.size}`);
+    console.log(`Existing ID count: ${existingIds.size}`);
 
-    // 找出需要填充的行
+    // Find rows that need to be filled
     const updates = [];
     for (let i = 1; i < values.length; i++) {
         const currentId = (values[i][projectIdColIdx] || '').trim();
         if (!currentId) {
-            // 生成唯一 ID
+            // Generate unique ID
             let newId;
             do {
                 newId = generateRandomId(6);
@@ -112,18 +112,18 @@ async function main() {
                 range: `${PROJECTS_SHEET}!${col}${rowNumber}`,
                 values: [[newId]]
             });
-            console.log(`  行 ${rowNumber}: 生成 ID -> ${newId}`);
+            console.log(`  Row ${rowNumber}: Generated ID -> ${newId}`);
         }
     }
 
     if (updates.length === 0) {
-        console.log('所有行都已有 ProjectID，无需更新。');
+        console.log('All rows already have ProjectID, no update needed.');
         return;
     }
 
-    console.log(`\n准备更新 ${updates.length} 行...`);
+    console.log(`\nPreparing to update ${updates.length} rows...`);
 
-    // 批量更新
+    // Batch update
     await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SHEET_ID,
         requestBody: {
@@ -132,10 +132,10 @@ async function main() {
         }
     });
 
-    console.log('✅ 完成！所有空的 ProjectID 已填充。');
+    console.log('✅ Done! All empty ProjectIDs have been filled.');
 }
 
 main().catch(e => {
-    console.error('❌ 错误:', e.message);
+    console.error('❌ Error:', e.message);
     process.exit(1);
 });

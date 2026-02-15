@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { google } from "googleapis";
-import { getDriveAuth } from "./api/_sheets.js";
+import { getDriveAuth } from "./lib/_sheets.js";
 import fs from 'fs';
 import path from 'path';
 import { pipeline } from 'stream/promises';
@@ -67,7 +67,7 @@ async function syncProblemFiles() {
         const file = allFiles.find(f => f.name === problemFileName);
 
         if (!file) {
-            console.log(`‚ùå Not found in Drive: ${problemFileName}`);
+            console.log(`‚ù?Not found in Drive: ${problemFileName}`);
             continue;
         }
 
@@ -92,10 +92,10 @@ async function syncProblemFiles() {
             const writeStream = fs.createWriteStream(localFilePath);
             await pipeline(response.data, writeStream);
 
-            console.log(`‚úÖ Downloaded successfully\n`);
+            console.log(`‚ú?Downloaded successfully\n`);
             downloadedCount++;
         } catch (err) {
-            console.error(`‚ùå Error: ${err.message}\n`);
+            console.error(`‚ù?Error: ${err.message}\n`);
             errorCount++;
         }
     }
@@ -103,8 +103,8 @@ async function syncProblemFiles() {
     console.log("=".repeat(50));
     console.log("SYNC COMPLETE");
     console.log("=".repeat(50));
-    console.log(`‚úÖ Downloaded: ${downloadedCount} files`);
-    console.log(`‚ùå Errors: ${errorCount} files`);
+    console.log(`‚ú?Downloaded: ${downloadedCount} files`);
+    console.log(`‚ù?Errors: ${errorCount} files`);
 
     // Count local files
     const localFiles = fs.readdirSync(LOCAL_TARGET);

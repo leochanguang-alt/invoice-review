@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS currency_rates (
     UNIQUE(currency_code, rate_date)
 );
 
--- Currency List Table (country 用于与发票识别结果自动关联)
+-- Currency List Table (country is used for auto-linking with invoice recognition results)
 CREATE TABLE IF NOT EXISTS currency_list (
     currency_code TEXT PRIMARY KEY,
     country TEXT

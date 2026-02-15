@@ -1,5 +1,5 @@
 /**
- * 检查 Main 表中所有 Drive_ID 是否有效
+ * Check if all Drive_IDs in the Main sheet are valid
  */
 
 import 'dotenv/config';
@@ -42,14 +42,14 @@ function getDriveAuth() {
 }
 
 async function main() {
-    console.log("=== 检查 Drive_ID 有效性 ===\n");
+    console.log("=== Check Drive_ID Validity ===\n");
 
     const auth = getDriveAuth();
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
 
-    // 1. 获取 Main 表数据
-    console.log("[STEP 1] 读取 Main 表...");
+    // 1. Get Main sheet data
+    console.log("[STEP 1] Reading Main sheet...");
     const mainRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `${MAIN_SHEET}!A:Z`,
@@ -70,14 +70,14 @@ async function main() {
     );
 
     if (driveIdIdx === -1) {
-        console.error("❌ Main 表中找不到 'Drive_ID' 或 'File_ID' 列");
+        console.error("❌ Cannot find 'Drive_ID' or 'File_ID' column in Main sheet");
         return;
     }
 
-    console.log(`   找到 Drive_ID 列索引: ${driveIdIdx}`);
-    console.log(`   Main 表共有 ${mainData.length - 1} 行数据\n`);
+    console.log(`   Found Drive_ID column index: ${driveIdIdx}`);
+    console.log(`   Main sheet has ${mainData.length - 1} rows of data\n`);
 
-    // 2. 收集所有 Drive_ID
+    // 2. Collect all Drive_IDs
     const driveIds = [];
     for (let i = 1; i < mainData.length; i++) {
         const row = mainData[i] || [];
@@ -92,9 +92,9 @@ async function main() {
         }
     }
 
-    console.log(`[STEP 2] 检查 ${driveIds.length} 个 Drive_ID...\n`);
+    console.log(`[STEP 2] Checking ${driveIds.length} Drive_IDs...\n`);
 
-    // 3. 检查每个 Drive_ID
+    // 3. Check each Drive_ID
     const invalid = [];
     const valid = [];
     let checked = 0;
@@ -102,7 +102,7 @@ async function main() {
     for (const item of driveIds) {
         checked++;
         if (checked % 50 === 0) {
-            console.log(`   已检查 ${checked}/${driveIds.length}...`);
+            console.log(`   Checked ${checked}/${driveIds.length}...`);
         }
 
         try {
@@ -115,7 +115,7 @@ async function main() {
             if (file.data.trashed) {
                 invalid.push({
                     ...item,
-                    reason: '文件已被删除（在回收站中）'
+                    reason: 'File has been deleted (in trash)'
                 });
             } else {
                 valid.push(item);
@@ -123,33 +123,33 @@ async function main() {
         } catch (err) {
             invalid.push({
                 ...item,
-                reason: err.message || '无法访问文件'
+                reason: err.message || 'Cannot access file'
             });
         }
     }
 
-    // 4. 输出结果
-    console.log("\n=== 检查结果 ===\n");
-    console.log(`总记录数: ${mainData.length - 1}`);
-    console.log(`有 Drive_ID: ${driveIds.length}`);
-    console.log(`无 Drive_ID: ${mainData.length - 1 - driveIds.length}`);
-    console.log(`有效 Drive_ID: ${valid.length}`);
-    console.log(`无效 Drive_ID: ${invalid.length}\n`);
+    // 4. Output results
+    console.log("\n=== Check Results ===\n");
+    console.log(`Total records: ${mainData.length - 1}`);
+    console.log(`With Drive_ID: ${driveIds.length}`);
+    console.log(`Without Drive_ID: ${mainData.length - 1 - driveIds.length}`);
+    console.log(`Valid Drive_IDs: ${valid.length}`);
+    console.log(`Invalid Drive_IDs: ${invalid.length}\n`);
 
     if (invalid.length === 0) {
-        console.log("✅ 所有 Drive_ID 都是有效的！\n");
+        console.log("✅ All Drive_IDs are valid!\n");
     } else {
-        console.log("⚠️  发现以下无效的 Drive_ID:\n");
+        console.log("⚠️  Found the following invalid Drive_IDs:\n");
         invalid.slice(0, 20).forEach(item => {
-            console.log(`   第 ${item.rowNumber} 行:`);
+            console.log(`   Row ${item.rowNumber}:`);
             console.log(`      Drive_ID: ${item.driveId}`);
             console.log(`      Vendor: ${item.vendor}, Amount: ${item.amount}`);
-            console.log(`      原因: ${item.reason}`);
+            console.log(`      Reason: ${item.reason}`);
             console.log("");
         });
 
         if (invalid.length > 20) {
-            console.log(`   ... 还有 ${invalid.length - 20} 个无效的 Drive_ID\n`);
+            console.log(`   ... and ${invalid.length - 20} more invalid Drive_IDs\n`);
         }
     }
 }

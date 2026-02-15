@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { S3Client, ListObjectsV2Command, CopyObjectCommand, DeleteObjectsCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 const r2 = new S3Client({
     region: "auto",
@@ -227,7 +227,7 @@ async function archiveToProjects() {
     console.log(`Files in R2 projects: ${finalProjectFiles.length}`);
     console.log(`Records with achieved_file_id: ${withAchievedId}`);
     console.log(`Records with achieved_file_link: ${withAchievedLink}`);
-    console.log(`\nMatch: ${finalProjectFiles.length === copiedCount ? '‚úÖ YES' : '‚ùå NO'}`);
+    console.log(`\nMatch: ${finalProjectFiles.length === copiedCount ? '‚ú?YES' : '‚ù?NO'}`);
 }
 
 archiveToProjects().catch(console.error);

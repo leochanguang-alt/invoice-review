@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 async function cleanup() {
     console.log('=== CLEANUP STARTED (Batch 2) ===\n');

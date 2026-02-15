@@ -1,4 +1,4 @@
-import { supabase } from "./_supabase.js";
+import { supabase } from "../lib/_supabase.js";
 import { S3Client, CopyObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 
 // R2 Configuration
@@ -137,14 +137,34 @@ export default async function handler(req, res) {
                 console.warn(`[SUBMIT] Failed to lookup record ${recordId}:`, e.message);
             }
 
-            if (fileId && fileId.trim() !== "") {
+            // Try to get original file path
+            let originalKey = "";
+            let fileExtension = ".pdf"; // default
+
+            // Prefer extracting path from dbR2Link (most reliable source)
+            if (dbR2Link) {
+                // Handle URL-encoded paths (e.g., spaces encoded as %20)
+                let decodedLink = dbR2Link;
                 try {
-                    // Determine file extension from fileId (which could be filename or R2 key)
-                    let originalKey = "";
-                    let fileExtension = ".pdf"; // default
+                    decodedLink = decodeURIComponent(dbR2Link);
+                } catch (e) {
+                    // If decoding fails, use original link
+                }
+                
+                const urlMatch = decodedLink.match(/bui_invoice\/.*$/);
+                if (urlMatch) {
+                    originalKey = urlMatch[0];
+                    const parts = originalKey.split('.');
+                    if (parts.length > 1) {
+                        fileExtension = '.' + parts[parts.length - 1];
+                    }
+                    console.log(`[SUBMIT] Found original key from DB R2 link: ${originalKey}`);
+                }
+            }
 
-                    // ...
-
+            // If not found from dbR2Link, try other methods
+            if (!originalKey && fileId && fileId.trim() !== "") {
+                try {
                     // Check if fileId is already an R2 key path
                     if (fileId.includes('/')) {
                         originalKey = fileId;
@@ -153,13 +173,9 @@ export default async function handler(req, res) {
                             fileExtension = '.' + parts[parts.length - 1];
                         }
                     } else {
-                        // fileId is a Google Drive ID - we need to find the file in R2
-                        // Try to find a matching file by searching for files containing this ID
-                        // For now, assume it might be the filename or partial key
-                        console.log(`[SUBMIT] Looking for file with ID: ${fileId}`);
+                        // fileId is a Google Drive ID - try to find the file in R2
+                        console.log(`[SUBMIT] Looking for file with Google Drive ID: ${fileId}`);
 
-                        // Try common patterns - the file might be in fr_google_drive
-                        // We'll need to check if the file exists
                         const possibleExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp'];
 
                         for (const ext of possibleExtensions) {
@@ -177,46 +193,37 @@ export default async function handler(req, res) {
                                 // File not found with this extension, continue
                             }
                         }
-
-                        // If still not found, try to get file link from Supabase record (dbR2Link)
-                        if (!originalKey && dbR2Link) {
-                            // Extract path from R2 URL
-                            const urlMatch = dbR2Link.match(/bui_invoice\/.*$/);
-                            if (urlMatch) {
-                                originalKey = urlMatch[0];
-                                const parts = originalKey.split('.');
-                                if (parts.length > 1) {
-                                    fileExtension = '.' + parts[parts.length - 1];
-                                }
-                                console.log(`[SUBMIT] Found original key from DB R2 link: ${originalKey}`);
-                            }
-                        }
                     }
+                } catch (e) {
+                    console.warn(`[SUBMIT] Error looking for file: ${e.message}`);
+                }
+            }
 
-                    if (originalKey) {
-                        // Copy file to project folder with new name
-                        const targetKey = `${R2_PROJECTS_PREFIX}/${projectCode}/${invoiceId}${fileExtension}`;
+            // Execute file copy
+            if (originalKey) {
+                try {
+                    // Copy file to project folder with new name
+                    const targetKey = `${R2_PROJECTS_PREFIX}/${projectCode}/${invoiceId}${fileExtension}`;
 
-                        console.log(`[SUBMIT] Copying ${originalKey} -> ${targetKey}`);
+                    // URL encode the CopySource path (required by S3/R2 for special characters like spaces)
+                    const encodedOriginalKey = originalKey.split('/').map(part => encodeURIComponent(part)).join('/');
 
-                        await r2.send(new CopyObjectCommand({
-                            Bucket: BUCKET_NAME,
-                            CopySource: `${BUCKET_NAME}/${originalKey}`,
-                            Key: targetKey
-                        }));
+                    console.log(`[SUBMIT] Copying ${originalKey} -> ${targetKey}`);
 
-                        archivedFileId = targetKey;
-                        archivedLink = `${R2_PUBLIC_URL}/${targetKey}`;
-                        console.log(`[SUBMIT] Archived OK: ${targetKey}`);
-                    } else {
-                        console.warn(`[SUBMIT] Could not locate original file for ID: ${fileId}`);
-                    }
+                    await r2.send(new CopyObjectCommand({
+                        Bucket: BUCKET_NAME,
+                        CopySource: `${BUCKET_NAME}/${encodedOriginalKey}`,
+                        Key: targetKey
+                    }));
 
+                    archivedFileId = targetKey;
+                    archivedLink = `${R2_PUBLIC_URL}/${targetKey}`;
+                    console.log(`[SUBMIT] Archived OK: ${targetKey}`);
                 } catch (archiveErr) {
                     console.error(`[SUBMIT] ARCHIVE ERROR for record ${recordId}:`, archiveErr.message);
                 }
             } else {
-                console.warn(`[SUBMIT] No fileId for record ${recordId}`);
+                console.warn(`[SUBMIT] Could not locate original file for record ${recordId}, fileId: ${fileId}`);
             }
 
             // Update Supabase record

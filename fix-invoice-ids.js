@@ -1,7 +1,7 @@
 /**
- * 修复 Invoice_ID 命名规则
- * 规则: {ProjectCode}-{4位序号}-{金额}{货币}
- * 负数金额用 m 前缀: -600 -> m600
+ * Fix Invoice_ID naming convention
+ * Rule: {ProjectCode}-{4-digit sequence}-{amount}{currency}
+ * Negative amounts use m prefix: -600 -> m600
  */
 
 import 'dotenv/config';
@@ -72,13 +72,13 @@ function getDriveAuth() {
 }
 
 async function main() {
-    console.log("=== 修复 Invoice_ID ===\n");
+    console.log("=== Fix Invoice_ID ===\n");
 
     const auth = getDriveAuth();
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // 1. 获取 Projects 表的所有 Project Code
-    console.log("[STEP 1] 读取 Projects 表...");
+    // 1. Get all Project Codes from Projects sheet
+    console.log("[STEP 1] Reading Projects sheet...");
     const projectsRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: 'Projects!A:Z',
@@ -98,10 +98,10 @@ async function main() {
             validProjectCodes.add(code.toLowerCase());
         }
     }
-    console.log(`   找到 ${validProjectCodes.size} 个有效的 Project Code\n`);
+    console.log(`   Found ${validProjectCodes.size} valid Project Codes\n`);
 
-    // 2. 获取 Main 表数据
-    console.log("[STEP 2] 读取 Main 表...");
+    // 2. Get Main sheet data
+    console.log("[STEP 2] Reading Main sheet...");
     const mainRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
         range: `${MAIN_SHEET}!A:Z`,
@@ -125,14 +125,14 @@ async function main() {
     );
 
     if (invoiceIdIdx === -1) {
-        console.error("❌ Main 表中找不到 'Invoice_ID' 列");
+        console.error("❌ Cannot find 'Invoice_ID' column in Main sheet");
         return;
     }
 
-    console.log(`   Invoice_ID 列索引: ${invoiceIdIdx} (${toA1Column(invoiceIdIdx + 1)}列)\n`);
+    console.log(`   Invoice_ID column index: ${invoiceIdIdx} (column ${toA1Column(invoiceIdIdx + 1)})\n`);
 
-    // 3. 找出需要修复的行
-    console.log("[STEP 3] 检查需要修复的 Invoice_ID...\n");
+    // 3. Find rows that need fixing
+    console.log("[STEP 3] Checking Invoice_IDs that need fixing...\n");
 
     const fixes = [];
 
@@ -144,48 +144,48 @@ async function main() {
         const currency = norm(row[currencyIdx]);
         const rowNum = i + 1;
 
-        // 跳过空的 Invoice_ID
+        // Skip empty Invoice_ID
         if (!invoiceId) continue;
 
-        // 解析当前 Invoice_ID 获取序号
+        // Parse current Invoice_ID to get sequence number
         const parts = invoiceId.split('-');
         if (parts.length < 3) continue;
 
-        // 提取序号 (倒数第二段)
+        // Extract sequence number (second to last segment)
         let seqPart = parts[parts.length - 2];
 
-        // 处理特殊情况: BUI-2025-0851--600GBP (序号是空的，我们需要找到正确的序号)
+        // Handle special case: BUI-2025-0851--600GBP (sequence is empty, need to find correct sequence)
         if (seqPart === '') {
-            // 这是负数金额的特殊情况，序号在再前一段
+            // This is a special case for negative amounts, sequence is in the segment before
             seqPart = parts[parts.length - 3];
         }
 
-        // 验证序号格式
+        // Validate sequence format
         if (!/^\d{4}$/.test(seqPart)) {
-            // 尝试从 ID 中提取 4 位数字作为序号
+            // Try to extract 4-digit number from ID as sequence
             const seqMatch = invoiceId.match(/-(\d{4})-/);
             if (seqMatch) {
                 seqPart = seqMatch[1];
             } else {
-                console.log(`   ⚠️ 第 ${rowNum} 行: 无法提取序号，跳过`);
+                console.log(`   ⚠️ Row ${rowNum}: Cannot extract sequence, skipping`);
                 continue;
             }
         }
 
-        // 计算正确的金额部分
+        // Calculate correct amount part
         const amountNum = parseFloat(amount.replace(/,/g, '')) || 0;
         let amountStr;
         if (amountNum < 0) {
-            // 负数用 m 前缀
+            // Negative numbers use m prefix
             amountStr = 'm' + Math.abs(Math.round(amountNum));
         } else {
             amountStr = Math.round(amountNum).toString();
         }
 
-        // 生成正确的 Invoice_ID
+        // Generate correct Invoice_ID
         const correctInvoiceId = `${projectCode}-${seqPart}-${amountStr}${currency}`;
 
-        // 检查是否需要修复
+        // Check if fix is needed
         if (invoiceId !== correctInvoiceId) {
             fixes.push({
                 rowNumber: rowNum,
@@ -199,20 +199,20 @@ async function main() {
     }
 
     if (fixes.length === 0) {
-        console.log("   ✅ 所有 Invoice_ID 都已正确，无需修复！\n");
+        console.log("   ✅ All Invoice_IDs are correct, no fix needed!\n");
         return;
     }
 
-    console.log(`   需要修复 ${fixes.length} 个 Invoice_ID:\n`);
+    console.log(`   Need to fix ${fixes.length} Invoice_IDs:\n`);
     fixes.forEach(fix => {
-        console.log(`   第 ${fix.rowNumber} 行:`);
-        console.log(`      旧: "${fix.oldId}"`);
-        console.log(`      新: "${fix.newId}"`);
+        console.log(`   Row ${fix.rowNumber}:`);
+        console.log(`      Old: "${fix.oldId}"`);
+        console.log(`      New: "${fix.newId}"`);
         console.log("");
     });
 
-    // 4. 批量更新
-    console.log("[STEP 4] 更新 Invoice_ID...");
+    // 4. Batch update
+    console.log("[STEP 4] Updating Invoice_IDs...");
 
     const invoiceIdCol = toA1Column(invoiceIdIdx + 1);
     const updates = fixes.map(fix => ({
@@ -228,10 +228,10 @@ async function main() {
         }
     });
 
-    console.log(`   ✅ 已更新 ${fixes.length} 个 Invoice_ID！\n`);
+    console.log(`   ✅ Updated ${fixes.length} Invoice_IDs!\n`);
 
-    // 5. 清除黄色标记
-    console.log("[STEP 5] 清除黄色标记...");
+    // 5. Clear yellow marks
+    console.log("[STEP 5] Clearing yellow marks...");
 
     const spreadsheet = await sheets.spreadsheets.get({
         spreadsheetId: SHEET_ID,
@@ -241,7 +241,7 @@ async function main() {
     const sheet = spreadsheet.data.sheets.find(s => s.properties.title === MAIN_SHEET);
     const mainSheetId = sheet.properties.sheetId;
 
-    // 清除所有已修复行的背景色
+    // Clear background color for all fixed rows
     const clearRequests = fixes.map(fix => ({
         repeatCell: {
             range: {
@@ -272,9 +272,9 @@ async function main() {
         }
     });
 
-    console.log(`   ✅ 已清除 ${fixes.length} 行的黄色标记！\n`);
+    console.log(`   ✅ Cleared yellow marks for ${fixes.length} rows!\n`);
 
-    console.log("=== 修复完成 ===");
+    console.log("=== Fix complete ===");
 }
 
 main().catch(err => {

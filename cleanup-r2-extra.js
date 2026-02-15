@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { S3Client, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 const r2 = new S3Client({
     region: 'auto',
@@ -96,7 +96,7 @@ async function cleanupExtraR2Files() {
     console.log('='.repeat(50));
     console.log(`R2 fr_google_drive files: ${finalCount}`);
     console.log(`Supabase records: ${invoices.length}`);
-    console.log(`Match: ${finalCount === invoices.length ? '‚úÖ YES' : '‚ùå NO'}`);
+    console.log(`Match: ${finalCount === invoices.length ? '‚ú?YES' : '‚ù?NO'}`);
 }
 
 cleanupExtraR2Files().catch(console.error);

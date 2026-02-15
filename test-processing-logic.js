@@ -1,4 +1,4 @@
-import { supabase } from './api/_supabase.js';
+import { supabase } from './lib/_supabase.js';
 
 // Mock data to simulate Gemini response
 const mockResponses = [
@@ -8,7 +8,7 @@ const mockResponses = [
     },
     {
         name: "Case 2: Lowercase and symbols",
-        text: '```json\n{"invoice_no": "INV-002", "invoice_date": "2024-01-02", "vendor": "Another Vendor", "city": "Paris", "country": "France", "amount": "â‚¬ 2,500.00", "currency": "EUR", "category": "Hotel"}\n```'
+        text: '```json\n{"invoice_no": "INV-002", "invoice_date": "2024-01-02", "vendor": "Another Vendor", "city": "Paris", "country": "France", "amount": "â‚?2,500.00", "currency": "EUR", "category": "Hotel"}\n```'
     }
 ];
 
