@@ -12,6 +12,26 @@ export default async function handler(req, res) {
       return json(res, 500, { success: false, message: "Supabase client not initialized" });
     }
 
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const type = url.searchParams.get('type');
+
+    // If type=headers, return invoice table headers (merged from headers.js)
+    if (type === 'headers') {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .limit(1);
+
+      if (error) {
+        console.error("Supabase Error:", error.message);
+        return json(res, 500, { success: false, message: error.message });
+      }
+
+      const headers = data && data.length > 0 ? Object.keys(data[0]) : [];
+      return json(res, 200, { success: true, headers });
+    }
+
+    // Default: return companies and projects lists
     const [companiesRes, projectsRes] = await Promise.all([
       supabase.from('companies').select('company_name'),
       supabase.from('projects').select('project_name'),
