@@ -1,5 +1,5 @@
-# 若出现 "Internal server error" 或 "job was not acquired by Runner of type hosted"，
-# 多为 GitHub 临时故障，请稍后从 Actions 页手动 Re-run 即可。
+# If you encounter "Internal server error" or "job was not acquired by Runner of type hosted",
+# it is usually a temporary GitHub issue. Please manually Re-run from the Actions page later.
 name: Auto Invoice Cloud Watcher
 
 on:
