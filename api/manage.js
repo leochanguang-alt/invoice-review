@@ -718,6 +718,10 @@ function mapInvoiceData(data) {
     if (data['Charge to Project'] !== undefined) mapped.charge_to_project = data['Charge to Project'];
     if (data['Owner'] !== undefined) mapped.owner_name = data['Owner'];
     if (data['Location(City)'] !== undefined) mapped.location_city = data['Location(City)'];
+    if (data['Remarks'] !== undefined || data['remarks'] !== undefined) {
+        const raw = data['Remarks'] !== undefined ? data['Remarks'] : data['remarks'];
+        mapped.remarks = (raw == null ? '' : String(raw)).slice(0, 30);
+    }
 
     return mapped;
 }

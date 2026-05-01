@@ -54,6 +54,7 @@ export default async function handler(req, res) {
             "Owner": item.owner_name || "",
             "Invoice ID": item.generated_invoice_id || "",
             "Location(City)": item.location_city || "",
+            "Remarks": item.remarks || "",
 
             // File fields - for R2 preview
             "file_link_r2": item.file_link_r2 || "",

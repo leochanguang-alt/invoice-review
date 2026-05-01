@@ -1288,8 +1288,11 @@ let ratesList = [];
 const REVIEW_DISPLAY_FIELDS = [
     'Invoice Date', 'Vender', 'Amount', 'Currency', 'Amount(HKD)',
     'Country', 'Category', 'Owner',
-    'Charge to Company', 'Charge to Project'
+    'Charge to Company', 'Charge to Project',
+    'Remarks'
 ];
+
+const OPTIONAL_REVIEW_FIELDS = new Set(['Remarks']);
 
 const EDITABLE_FIELDS = ['Charge to Company', 'Charge to Project'];
 
@@ -1338,6 +1341,25 @@ function setupReviewTabs() {
     if (submitBtn) {
         submitBtn.onclick = submitSelectedRecords;
     }
+
+    // Select All / Deselect All buttons (work on all tabs)
+    const selectAllBtn = document.getElementById('select-all-btn');
+    const deselectAllBtn = document.getElementById('deselect-all-btn');
+    if (selectAllBtn) selectAllBtn.onclick = () => selectAllRows(true);
+    if (deselectAllBtn) deselectAllBtn.onclick = () => selectAllRows(false);
+}
+
+// Select-all / deselect-all helper. Operates on the active tab's selection set:
+// - Submit tab: submitSelectedRows
+// - Review/Modify tabs: reviewedRows
+function selectAllRows(select) {
+    const targetSet = currentReviewTab === 'submit' ? submitSelectedRows : reviewedRows;
+    if (select) {
+        reviewRecords.forEach(r => targetSet.add(r._rowNumber));
+    } else {
+        targetSet.clear();
+    }
+    renderReviewRecords();
 }
 
 function switchReviewTab(tabName) {
@@ -1354,18 +1376,18 @@ function switchReviewTab(tabName) {
     // Show/hide right panel based on tab
     const rightPanel = document.querySelector('.review-right-panel');
     const leftPanel = document.querySelector('.review-left-panel');
-    const submitActions = document.getElementById('submit-actions');
+    const submitBtn = document.getElementById('submit-selected-btn');
 
     if (tabName === 'submit') {
         // Hide right panel for submit tab
         if (rightPanel) rightPanel.style.display = 'none';
         if (leftPanel) leftPanel.style.flex = '1';
-        if (submitActions) submitActions.style.display = 'block';
+        if (submitBtn) submitBtn.style.display = '';
     } else {
         // Show right panel for other tabs
         if (rightPanel) rightPanel.style.display = 'flex';
         if (leftPanel) leftPanel.style.flex = '';
-        if (submitActions) submitActions.style.display = 'none';
+        if (submitBtn) submitBtn.style.display = 'none';
     }
 
     loadReviewRecords();
@@ -1385,7 +1407,7 @@ async function loadProjectsList() {
 
 async function loadReviewRecords() {
     const bodyEl = document.getElementById('review-table-body');
-    bodyEl.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 2rem; color: #888;">Loading...</td></tr>';
+    bodyEl.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 2rem; color: #888;">Loading...</td></tr>';
 
     try {
         const res = await fetch('/api/expenses');
@@ -1416,11 +1438,11 @@ async function loadReviewRecords() {
             document.getElementById('review-record-count').textContent = `${reviewRecords.length} records`;
             renderReviewRecords();
         } else {
-            bodyEl.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 2rem; color: #888;">No records found</td></tr>';
+            bodyEl.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 2rem; color: #888;">No records found</td></tr>';
         }
     } catch (e) {
         console.error(e);
-        bodyEl.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 2rem; color: red;">Failed to load records</td></tr>';
+        bodyEl.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 2rem; color: red;">Failed to load records</td></tr>';
     }
 }
 
@@ -1442,7 +1464,8 @@ function renderReviewRecords() {
             { key: 'Category', label: 'Category' },
             { key: 'Owner', label: 'Owner' },
             { key: 'Charge to Project', label: 'Project' },
-            { key: 'Charge to Company', label: 'Company' }
+            { key: 'Charge to Company', label: 'Company' },
+            { key: 'Remarks', label: 'Remarks' }
         ];
     } else {
         // Review/Modify tabs: original columns with Status
@@ -1455,7 +1478,8 @@ function renderReviewRecords() {
             { key: 'Country', label: 'Country' },
             { key: 'Category', label: 'Category' },
             { key: 'Status', label: 'Status' },
-            { key: 'Owner', label: 'Owner' }
+            { key: 'Owner', label: 'Owner' },
+            { key: 'Remarks', label: 'Remarks' }
         ];
     }
 
@@ -1857,6 +1881,9 @@ async function renderDetailForm(record) {
                 return `<option value="${cat}" ${selected}>${cat}</option>`;
             }).join('')}
             </select>`;
+        } else if (field === 'Remarks') {
+            const safeValue = value.replace(/"/g, '&quot;');
+            html += `<input type="text" id="${fieldId}" value="${safeValue}" data-field="Remarks" maxlength="30" placeholder="Up to 30 characters (optional)" />`;
         } else {
             // Editable text fields
             html += `<input type="text" id="${fieldId}" value="${value}" data-field="${field}" />`;
@@ -2134,7 +2161,8 @@ async function saveRecordChanges() {
         'Category': 'Category',
         'Owner': 'Owner',
         'Charge to Company': 'Charge to Company',
-        'Charge to Project': 'Charge to Project'
+        'Charge to Project': 'Charge to Project',
+        'Remarks': 'Remarks'
     };
 
     const data = {};
@@ -2193,8 +2221,9 @@ async function confirmReviewedInvoices() {
         const record = reviewRecords.find(r => r._rowNumber === rowNum);
         if (!record) continue;
 
-        // Check for empty required fields
+        // Check for empty required fields (skip optional fields like Remarks)
         for (const field of REVIEW_DISPLAY_FIELDS) {
+            if (OPTIONAL_REVIEW_FIELDS.has(field)) continue;
             if (!record[field] || record[field].trim() === '') {
                 alert(`Record row ${rowNum} has empty field: ${field}`);
                 return;

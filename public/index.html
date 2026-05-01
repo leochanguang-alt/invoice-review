@@ -221,8 +221,10 @@
                             <h3>Invoice Records</h3>
                             <span id="review-record-count">0 records</span>
                         </div>
-                        <div id="submit-actions" style="display: none; margin-bottom: 1rem;">
-                            <button id="submit-selected-btn" class="btn-primary" onclick="submitSelectedRecords()">Submit Selected Records</button>
+                        <div id="review-actions" style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center;">
+                            <button id="select-all-btn" type="button" class="btn-secondary">Select All</button>
+                            <button id="deselect-all-btn" type="button" class="btn-secondary">Deselect All</button>
+                            <button id="submit-selected-btn" type="button" class="btn-primary" style="display: none;" onclick="submitSelectedRecords()">Submit Selected Records</button>
                         </div>
                         <div class="review-table-container">
                             <table class="review-table" id="review-table">
