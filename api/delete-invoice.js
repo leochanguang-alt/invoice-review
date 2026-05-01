@@ -25,6 +25,28 @@ const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || "").replace(/\/+$/, '');
 // Drive Configuration
 const drive = google.drive({ version: "v3", auth: getDriveAuth() });
 
+function extractR2Key(r2Link) {
+    if (!r2Link) return "";
+    try {
+        if (R2_PUBLIC_URL && r2Link.startsWith(R2_PUBLIC_URL)) {
+            return r2Link.substring(R2_PUBLIC_URL.length).replace(/^\/+/, '');
+        }
+        const url = new URL(r2Link);
+        return url.pathname.replace(/^\/+/, '');
+    } catch {
+        return "";
+    }
+}
+
+async function deleteR2Object(r2Key) {
+    if (!r2Key || !BUCKET_NAME) return { skipped: true };
+    await r2.send(new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: r2Key
+    }));
+    return { deleted: true, key: r2Key };
+}
+
 export default async function handler(req, res) {
     if (req.method !== "POST") {
         return json(res, 405, { success: false, message: "Method not allowed" });
@@ -55,7 +77,14 @@ export default async function handler(req, res) {
         }
 
         const driveFileId = record.file_id;
-        const r2Link = record.file_link_r2;
+        const r2Links = [
+            record.file_link_r2,
+            record.achieved_file_link
+        ].filter(Boolean);
+        const r2Keys = new Set(r2Links.map(extractR2Key).filter(Boolean));
+        if (record.achieved_file_id) {
+            r2Keys.add(record.achieved_file_id);
+        }
         const results = {
             supabase: false,
             r2: false,
@@ -66,7 +95,10 @@ export default async function handler(req, res) {
         // 2. Delete from Google Drive
         if (driveFileId) {
             try {
-                await drive.files.delete({ fileId: driveFileId });
+                await drive.files.delete({
+                    fileId: driveFileId,
+                    supportsAllDrives: true
+                });
                 results.drive = true;
                 console.log(`[DELETE] Deleted from Drive: ${driveFileId}`);
             } catch (err) {
@@ -77,35 +109,39 @@ export default async function handler(req, res) {
             results.drive = "skip (no id)";
         }
 
-        // 3. Delete from R2
-        if (r2Link && BUCKET_NAME) {
-            try {
-                // Extract key from R2 link
-                let r2Key = "";
-                if (R2_PUBLIC_URL && r2Link.startsWith(R2_PUBLIC_URL)) {
-                    r2Key = r2Link.substring(R2_PUBLIC_URL.length).replace(/^\/+/, '');
-                } else {
-                    const url = new URL(r2Link);
-                    r2Key = url.pathname.replace(/^\/+/, '');
-                }
-
-                if (r2Key) {
-                    await r2.send(new DeleteObjectCommand({
-                        Bucket: BUCKET_NAME,
-                        Key: r2Key
-                    }));
-                    results.r2 = true;
+        // 3. Delete from R2 (both original and archived files)
+        if (r2Keys.size > 0 && BUCKET_NAME) {
+            const r2Failures = [];
+            for (const r2Key of r2Keys) {
+                try {
+                    await deleteR2Object(r2Key);
                     console.log(`[DELETE] Deleted from R2: ${r2Key}`);
+                } catch (err) {
+                    console.error(`[DELETE] R2 error for ${r2Key}:`, err.message);
+                    r2Failures.push(`${r2Key}: ${err.message}`);
                 }
-            } catch (err) {
-                console.error(`[DELETE] R2 error for ${r2Link}:`, err.message);
-                results.errors.push(`R2: ${err.message}`);
+            }
+            if (r2Failures.length === 0) {
+                results.r2 = true;
+            } else {
+                results.r2 = false;
+                results.errors.push(`R2: ${r2Failures.join(' | ')}`);
             }
         } else {
-            results.r2 = "skip (no link)";
+            results.r2 = "skip (no link/key)";
         }
 
-        // 4. Delete from Supabase
+        // 4. Only delete DB row after attachment cleanup succeeds.
+        // This prevents orphaned files from being re-processed and re-ingested.
+        if (results.errors.length > 0) {
+            return json(res, 500, {
+                success: false,
+                message: "Attachment deletion failed. Database record is kept to avoid re-ingest.",
+                details: results
+            });
+        }
+
+        // 5. Delete from Supabase
         const { error: deleteError } = await supabase
             .from('invoices')
             .delete()
