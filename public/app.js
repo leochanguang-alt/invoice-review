@@ -1632,8 +1632,17 @@ async function deleteInvoiceRecord(rowNum) {
         const json = await res.json();
 
         if (json.success) {
-            alert('Record deleted successfully from all sources.');
-            // Refresh the list
+            if (json.partial) {
+                const detailLines = formatCleanupErrors(json.details);
+                alert(
+                    'Record removed from the list, but attachment cleanup is still pending.\n' +
+                    'It will be retried automatically.\n\n' +
+                    (detailLines || 'No further details.')
+                );
+            } else {
+                alert('Record deleted successfully from all sources.');
+            }
+            // Refresh the list either way — record is gone from the user's view.
             await loadReviewRecords();
             // Clear detail panel if the deleted record was selected
             if (selectedRecordRow === rowNum) {
@@ -1642,7 +1651,11 @@ async function deleteInvoiceRecord(rowNum) {
                 document.getElementById('attachment-container').innerHTML = '<p style="color: #888;">No attachment available</p>';
             }
         } else {
-            alert('Failed to delete record: ' + json.message);
+            const detailLines = formatCleanupErrors(json.details);
+            alert(
+                'Failed to delete record: ' + (json.message || 'unknown error') +
+                (detailLines ? '\n\n' + detailLines : '')
+            );
             if (btn) {
                 btn.disabled = false;
                 btn.innerText = 'Delete';
@@ -1652,6 +1665,43 @@ async function deleteInvoiceRecord(rowNum) {
         console.error('Delete error:', e);
         alert('An error occurred while deleting the record.');
     }
+}
+
+// Render a multi-line summary of cleanup details for an alert dialog.
+function formatCleanupErrors(details) {
+    if (!details) return '';
+    const lines = [];
+    if (details.cleanup_status) {
+        lines.push(`Cleanup status: ${details.cleanup_status}`);
+    }
+    if (details.attempts != null) {
+        lines.push(`Attempts so far: ${details.attempts}`);
+    }
+    if (details.drive !== undefined) {
+        lines.push(`Drive: ${formatCleanupOutcome(details.drive)}`);
+    }
+    if (details.r2 !== undefined) {
+        lines.push(`R2: ${formatCleanupOutcome(details.r2)}`);
+    }
+    if (Array.isArray(details.errors) && details.errors.length > 0) {
+        lines.push('Errors:');
+        for (const err of details.errors) {
+            lines.push(`  - ${err}`);
+        }
+    }
+    if (Array.isArray(details.ignored) && details.ignored.length > 0) {
+        lines.push('Ignored (already gone):');
+        for (const note of details.ignored) {
+            lines.push(`  - ${note}`);
+        }
+    }
+    return lines.join('\n');
+}
+
+function formatCleanupOutcome(value) {
+    if (value === true) return 'ok';
+    if (value === false) return 'failed';
+    return String(value);
 }
 
 // Submit tab functions

@@ -52,16 +52,24 @@ export default async function handler(req, res) {
       return json(res, 400, { success: false, message: "Missing record ID" });
     }
 
-    // Fetch the invoice record to auto-calculate amount_hkd if missing
+    // Fetch the invoice record to auto-calculate amount_hkd if missing.
+    // We also need deleted_at so we can refuse to confirm a soft-deleted row.
     const { data: invoice, error: fetchErr } = await supabase
       .from('invoices')
-      .select('amount, currency, invoice_date, amount_hkd')
+      .select('amount, currency, invoice_date, amount_hkd, deleted_at')
       .eq('id', recordId)
       .single();
 
     if (fetchErr) {
       console.error("[CONFIRM] Fetch error:", fetchErr);
       return json(res, 404, { success: false, message: "Record not found" });
+    }
+
+    if (invoice?.deleted_at) {
+      return json(res, 409, {
+        success: false,
+        message: "Record is deleted; cannot confirm.",
+      });
     }
 
     // Build update object

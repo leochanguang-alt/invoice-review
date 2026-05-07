@@ -20,6 +20,7 @@ export default async function handler(req, res) {
       const { data, error } = await supabase
         .from('invoices')
         .select('*')
+        .is('deleted_at', null)
         .limit(1);
 
       if (error) {

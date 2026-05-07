@@ -14,11 +14,12 @@ export default async function handler(req, res) {
       return json(res, 500, { success: false, message: "Supabase client not initialized" });
     }
 
-    // First waiting record by created_at asc
+    // First waiting record by created_at asc — skip soft-deleted tombstones.
     const { data, error } = await supabase
       .from('invoices')
       .select('*')
       .eq('status', WAITING_STATUS)
+      .is('deleted_at', null)
       .order('created_at', { ascending: true })
       .limit(1);
 

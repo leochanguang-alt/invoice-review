@@ -132,10 +132,19 @@ export default async function handler(req, res) {
 
             const sortCol = tableKey === 'currency_history' ? 'rate_date' : 'created_at';
 
-            const { data, error } = await supabase
+            let listQuery = supabase
                 .from(tableName)
                 .select('*')
                 .order(sortCol, { ascending: false });
+
+            // Hide soft-deleted invoice rows from the management UI by default.
+            // Pass ?include_deleted=1 to surface tombstones (useful for cleanup debugging).
+            const includeDeleted = req.query?.include_deleted === '1' || req.query?.include_deleted === 'true';
+            if (tableKey === 'main' && !includeDeleted) {
+                listQuery = listQuery.is('deleted_at', null);
+            }
+
+            const { data, error } = await listQuery;
 
             if (error) {
                 console.error("[MANAGE] GET error:", error);
@@ -331,11 +340,12 @@ export default async function handler(req, res) {
 
                 for (const invoiceId of invoiceIds) {
                     try {
-                        // 1. Get the invoice record to find file info
+                        // 1. Get the invoice record to find file info — skip soft-deleted ones.
                         const { data: invoice, error: fetchError } = await supabase
                             .from('invoices')
                             .select('*')
                             .eq('generated_invoice_id', invoiceId)
+                            .is('deleted_at', null)
                             .single();
 
                         if (fetchError) {

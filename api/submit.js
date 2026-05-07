@@ -62,7 +62,8 @@ export default async function handler(req, res) {
             projectGroups[key].push(record);
         }
 
-        // Get existing Invoice_IDs from Supabase to determine next sequence for each project
+        // Get existing Invoice_IDs from Supabase to determine next sequence for each project.
+        // Soft-deleted rows still hold the sequence number so we keep them in the calc.
         const { data: existingInvoices, error: invErr } = await supabase
             .from('invoices')
             .select('generated_invoice_id')
@@ -119,22 +120,33 @@ export default async function handler(req, res) {
             let archivedFileId = "";
 
             // Robustness: always fetch DB record to obtain R2 link for fallback
-            // (also fills fileId if request omitted it)
+            // (also fills fileId if request omitted it). Skip soft-deleted rows.
             let dbR2Link = "";
+            let isSoftDeleted = false;
             try {
                 const { data: recData } = await supabase
                     .from('invoices')
-                    .select('file_id, file_link, file_link_r2')
+                    .select('file_id, file_link, file_link_r2, deleted_at')
                     .eq('id', recordId)
                     .single();
                 if (recData) {
-                    if (!fileId || fileId.trim() === "") {
-                        fileId = recData.file_id || "";
+                    if (recData.deleted_at) {
+                        isSoftDeleted = true;
+                    } else {
+                        if (!fileId || fileId.trim() === "") {
+                            fileId = recData.file_id || "";
+                        }
+                        dbR2Link = recData.file_link_r2 || recData.file_link || "";
                     }
-                    dbR2Link = recData.file_link_r2 || recData.file_link || "";
                 }
             } catch (e) {
                 console.warn(`[SUBMIT] Failed to lookup record ${recordId}:`, e.message);
+            }
+
+            if (isSoftDeleted) {
+                console.warn(`[SUBMIT] Skipping soft-deleted record ${recordId}`);
+                results.push({ recordId, success: false, error: 'Record is deleted' });
+                continue;
             }
 
             // Try to get original file path

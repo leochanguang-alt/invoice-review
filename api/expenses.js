@@ -16,10 +16,11 @@ export default async function handler(req, res) {
         const url = new URL(req.url, `http://${req.headers.host}`);
         const statusFilter = url.searchParams.get('status');
 
-        // Build query
+        // Build query — exclude soft-deleted rows so the UI never shows tombstones.
         let query = supabase
             .from('invoices')
             .select('*')
+            .is('deleted_at', null)
             .order('created_at', { ascending: false });
 
         // Apply status filter if provided
