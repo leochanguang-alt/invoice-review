@@ -6,6 +6,7 @@ import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/clien
 import { supabase } from './lib/_supabase.js';
 import { getCurrencyList, linkCurrencyCountry } from './lib/currency-country-link.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generateContentWithFallback } from './lib/_gemini.js';
 
 // R2 Configuration
 const r2 = new S3Client({
@@ -19,7 +20,6 @@ const r2 = new S3Client({
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PREFIX = 'bui_invoice/original_files/fr_google_drive/';
-const GENAI_MODEL = 'gemini-2.0-flash';
 const LOG_FILE = path.join(process.cwd(), 'sync-log.txt');
 const DAYS_BACK = Number(process.env.R2_SCAN_DAYS_BACK || 90); // Only scan recent N days
 
@@ -102,8 +102,6 @@ async function processInvoices() {
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: GENAI_MODEL });
-
     try {
         // 1. List files in R2 fr_google_drive prefix
         console.log(`Scanning R2 prefix: ${R2_PREFIX}`);
@@ -202,7 +200,7 @@ total_amount (total amount, numeric format)
 currency (currency unit, choose one: GBP/HKD/USD/EUR/SEK/DKK/CHF/CNY/CAD/AED)
 category (expense category, choose one: Hotel/Flight/Train/Taxi/Entertainment/office expense/Communication/IT expense/Meal)`;
 
-                const result = await model.generateContent([
+                const { result, modelName } = await generateContentWithFallback(genAI, [
                     {
                         inlineData: {
                             data: buffer.toString('base64'),
@@ -213,6 +211,7 @@ category (expense category, choose one: Hotel/Flight/Train/Taxi/Entertainment/of
                 ]);
 
                 const responseText = result.response.text();
+                console.log(`[GEMINI] Parsed with model: ${modelName}`);
                 let jsonStr = responseText;
                 const jsonMatch = responseText.match(/\{[\s\S]*\}/);
                 if (jsonMatch) jsonStr = jsonMatch[0];

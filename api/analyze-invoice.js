@@ -1,6 +1,7 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { json } from "../lib/_sheets.js";
+import { generateContentWithFallback } from "../lib/_gemini.js";
 
 // Initialize R2 client
 // Note: These env vars must be set by the user
@@ -36,9 +37,8 @@ export default async function handler(req, res) {
         const response = await r2.send(command);
         const fileArrayBuffer = await response.Body.transformToByteArray();
 
-        // 2. Analyze with Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result = await model.generateContent([
+        // 2. Analyze with Gemini (with model fallback)
+        const { result, modelName } = await generateContentWithFallback(genAI, [
             "Please analyze this file and extract the core data. Return in JSON format with: invoice_date, vendor, amount, currency, category, project_code.",
             {
                 inlineData: {
@@ -49,6 +49,7 @@ export default async function handler(req, res) {
         ]);
 
         const analysisText = result.response.text();
+        console.log(`[ANALYZE] Gemini model used: ${modelName}`);
 
         return json(res, 200, {
             success: true,

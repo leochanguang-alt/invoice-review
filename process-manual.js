@@ -4,8 +4,7 @@ import { getDriveAuth, getSheetsClient, SHEET_ID, norm } from './lib/_sheets.js'
 import { supabase } from './lib/_supabase.js';
 import { getCurrencyList, linkCurrencyCountry } from './lib/currency-country-link.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const GENAI_MODEL = 'gemini-3-flash-preview';
+import { generateContentWithFallback } from './lib/_gemini.js';
 
 async function processFileById(fileId, force = false) {
     console.log(`\n--- Manually Processing File: ${fileId} ---`);
@@ -40,7 +39,6 @@ async function processFileById(fileId, force = false) {
     console.log('[DEBUG] Drive client created.');
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     console.log('[DEBUG] Gemini AI client created.');
-    const model = genAI.getGenerativeModel({ model: GENAI_MODEL });
 
     try {
         // 2. Get file metadata
@@ -73,7 +71,7 @@ total_amount (total amount, numeric format)
 currency (currency unit, choose one: GBP/HKD/USD/EUR/SEK/DKK/CHF/CNY/CAD/AED)
 category (expense category, choose one: Hotel/Flight/Train/Taxi/Entertainment/office expense/Communication/IT expense/Meal)`;
 
-        const result = await model.generateContent([
+        const { result, modelName } = await generateContentWithFallback(genAI, [
             {
                 inlineData: {
                     data: buffer.toString('base64'),
@@ -82,6 +80,7 @@ category (expense category, choose one: Hotel/Flight/Train/Taxi/Entertainment/of
             },
             prompt
         ]);
+        console.log(`[GEMINI] Parsed with model: ${modelName}`);
 
         const responseText = result.response.text();
         console.log('Gemini raw response:', responseText);

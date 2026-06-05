@@ -2,9 +2,10 @@ import 'dotenv/config';
 
 async function testFetch() {
     const key = process.env.GEMINI_API_KEY;
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`;
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${key}`;
 
-    console.log(`Testing direct fetch to: https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=...`);
+    console.log(`Testing direct fetch to model: ${model}`);
 
     try {
         const response = await fetch(url, {
