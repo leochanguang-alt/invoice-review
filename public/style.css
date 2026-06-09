@@ -1569,14 +1569,10 @@ tr:hover td {
 /* ================================
    Export Page Styles
    ================================ */
-.export-header {
-  margin-bottom: 1.5rem;
-}
-
-.export-header h2 {
-  color: var(--text-heading);
-  font-size: 1.5rem;
-  font-weight: 600;
+.export-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
 }
 
 .export-table {

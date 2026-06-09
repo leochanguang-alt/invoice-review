@@ -8,7 +8,7 @@ const PAGES = {
     summary: "Dashboard",
     invoice: "Review Invoice",
     reconciliation: "Finance Reconciliation",
-    export: "Project Export",
+    export: "Project Management",
     settings: "Account Setting"
 };
 
@@ -2306,7 +2306,18 @@ window.saveRecordChanges = saveRecordChanges;
 // ============ EXPORT PAGE FUNCTIONS ============
 
 let exportProjectsData = [];
+let exportArchiveFilter = 'active';
 let currentExportProject = null;
+
+function getFilteredExportProjects() {
+    if (exportArchiveFilter === 'archived') {
+        return exportProjectsData.filter(p => p.archived);
+    }
+    if (exportArchiveFilter === 'all') {
+        return exportProjectsData;
+    }
+    return exportProjectsData.filter(p => !p.archived);
+}
 
 async function showExportPage() {
     document.getElementById('export-area').style.display = 'block';
@@ -2424,13 +2435,24 @@ async function loadExportProjectData() {
 
 function renderExportTable() {
     const tbody = document.getElementById('export-table-body');
+    const filteredProjects = getFilteredExportProjects();
 
     if (exportProjectsData.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No project data</td></tr>';
         return;
     }
 
-    tbody.innerHTML = exportProjectsData.map(p => `
+    if (filteredProjects.length === 0) {
+        const emptyMessage = exportArchiveFilter === 'archived'
+            ? 'No archived projects'
+            : exportArchiveFilter === 'active'
+                ? 'No active projects'
+                : 'No projects match this filter';
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">${emptyMessage}</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = filteredProjects.map(p => `
         <tr data-project-id="${p.project_id}">
             <td>
                 <div class="export-btn-group">
@@ -2901,6 +2923,14 @@ async function confirmArchiveProject() {
 
 // Export modal event listeners
 document.addEventListener('DOMContentLoaded', () => {
+    const exportArchiveFilterEl = document.getElementById('export-archive-filter');
+    if (exportArchiveFilterEl) {
+        exportArchiveFilterEl.addEventListener('change', () => {
+            exportArchiveFilter = exportArchiveFilterEl.value;
+            renderExportTable();
+        });
+    }
+
     // Export confirm modal
     const exportConfirmYes = document.getElementById('export-confirm-yes');
     const exportConfirmNo = document.getElementById('export-confirm-no');

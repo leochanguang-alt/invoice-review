@@ -90,7 +90,7 @@
             <div class="nav-item active" data-page="summary">Dashboard</div>
             <div class="nav-item" data-page="invoice">Review Invoice</div>
             <div class="nav-item" data-page="reconciliation">Reconciliation</div>
-            <div class="nav-item" data-page="export">Export</div>
+            <div class="nav-item" data-page="export">Project Management</div>
             <div class="nav-item" data-page="settings">Settings</div>
             <div class="sidebar-footer">
                 <div class="user-welcome">
@@ -259,11 +259,19 @@
                 </div>
             </div>
 
-            <!-- Export Page -->
+            <!-- Project Management Page -->
             <div id="export-area" style="display: none;">
-                <div class="export-header">
-                    <h2>Project Export</h2>
-                    <p style="color: #888; margin-top: 5px;">Export project expense reports and related files</p>
+                <div class="export-toolbar">
+                    <div class="filter-group">
+                        <div class="filter-item">
+                            <label>Status</label>
+                            <select id="export-archive-filter">
+                                <option value="active" selected>Active</option>
+                                <option value="archived">Archived</option>
+                                <option value="all">All</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
                 <div class="card">
                     <table class="export-table" id="export-table">
