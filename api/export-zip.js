@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import archiver from "archiver";
+import { supabase } from "../lib/_supabase.js";
 
 const r2 = new S3Client({
     region: "auto",
@@ -12,6 +13,48 @@ const r2 = new S3Client({
 });
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME || "buiservice-assets";
+
+async function listProjectFolderKeys(projectCode) {
+    const prefix = `bui_invoice/projects/${projectCode}/`;
+    const listRes = await r2.send(new ListObjectsV2Command({
+        Bucket: BUCKET_NAME,
+        Prefix: prefix,
+    }));
+
+    return (listRes.Contents || [])
+        .map(file => file.Key)
+        .filter(key => key && !key.endsWith("/") && !key.endsWith("/.placeholder"));
+}
+
+async function listArchivedInvoiceKeys(projectCode) {
+    if (!supabase) return [];
+
+    const { data, error } = await supabase
+        .from("invoices")
+        .select("achieved_file_id, achieved_file_link")
+        .eq("charge_to_project", projectCode)
+        .is("deleted_at", null);
+
+    if (error) {
+        console.error("[export-zip] Failed to load archived invoice paths:", error.message);
+        return [];
+    }
+
+    const keys = new Set();
+    for (const row of data || []) {
+        const achievedId = (row.achieved_file_id || "").replace(/^\/+/, "");
+        if (achievedId.startsWith("bui_invoice/")) {
+            keys.add(achievedId);
+            continue;
+        }
+
+        const link = row.achieved_file_link || "";
+        const match = link.match(/(bui_invoice\/projects\/[^?]+)/);
+        if (match) keys.add(match[1].replace(/^\/+/, ""));
+    }
+
+    return Array.from(keys);
+}
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
@@ -29,25 +72,24 @@ export default async function handler(req, res) {
     console.log(`[export-zip] Starting export for project: ${projectCode}`);
 
     try {
-        // List all files in the project folder
-        const prefix = `bui_invoice/projects/${projectCode}/`;
-        
-        const listRes = await r2.send(new ListObjectsV2Command({
-            Bucket: BUCKET_NAME,
-            Prefix: prefix,
-        }));
+        let fileKeys = await listProjectFolderKeys(projectCode);
+        let source = "project-folder";
 
-        const files = listRes.Contents || [];
-        
-        if (files.length === 0) {
+        // After a project rename, archived files may still live under the old R2 folder.
+        if (fileKeys.length === 0) {
+            fileKeys = await listArchivedInvoiceKeys(projectCode);
+            source = "archived-invoice-paths";
+        }
+
+        if (fileKeys.length === 0) {
             res.statusCode = 404;
-            return res.end(JSON.stringify({ 
-                error: 'No files found',
-                message: `No files found in project folder: ${prefix}`
+            return res.end(JSON.stringify({
+                error: "No files found",
+                message: `No files found for project ${projectCode} in R2 project folder or archived invoice paths`,
             }));
         }
 
-        console.log(`[export-zip] Found ${files.length} files in ${prefix}`);
+        console.log(`[export-zip] Found ${fileKeys.length} files for ${projectCode} via ${source}`);
 
         // Set response headers for ZIP download
         const zipFilename = `${projectCode}_files.zip`;
@@ -78,8 +120,7 @@ export default async function handler(req, res) {
         });
 
         // Add each file to the archive
-        for (const file of files) {
-            const fileKey = file.Key;
+        for (const fileKey of fileKeys) {
             let fileName = fileKey.split('/').pop();
             
             // Skip if empty filename or directory marker
