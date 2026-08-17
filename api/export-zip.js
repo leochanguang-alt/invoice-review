@@ -14,6 +14,10 @@ const r2 = new S3Client({
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME || "buiservice-assets";
 
+export function mergeProjectFileKeys(currentFolderKeys, archivedInvoiceKeys) {
+    return Array.from(new Set([...currentFolderKeys, ...archivedInvoiceKeys]));
+}
+
 async function listProjectFolderKeys(projectCode) {
     const prefix = `bui_invoice/projects/${projectCode}/`;
     const listRes = await r2.send(new ListObjectsV2Command({
@@ -72,14 +76,11 @@ export default async function handler(req, res) {
     console.log(`[export-zip] Starting export for project: ${projectCode}`);
 
     try {
-        let fileKeys = await listProjectFolderKeys(projectCode);
-        let source = "project-folder";
-
-        // After a project rename, archived files may still live under the old R2 folder.
-        if (fileKeys.length === 0) {
-            fileKeys = await listArchivedInvoiceKeys(projectCode);
-            source = "archived-invoice-paths";
-        }
+        const [currentFolderKeys, archivedInvoiceKeys] = await Promise.all([
+            listProjectFolderKeys(projectCode),
+            listArchivedInvoiceKeys(projectCode),
+        ]);
+        const fileKeys = mergeProjectFileKeys(currentFolderKeys, archivedInvoiceKeys);
 
         if (fileKeys.length === 0) {
             res.statusCode = 404;
@@ -89,7 +90,10 @@ export default async function handler(req, res) {
             }));
         }
 
-        console.log(`[export-zip] Found ${fileKeys.length} files for ${projectCode} via ${source}`);
+        console.log(
+            `[export-zip] Found ${fileKeys.length} files for ${projectCode} ` +
+            `(${currentFolderKeys.length} in current folder, ${archivedInvoiceKeys.length} archived paths)`
+        );
 
         // Set response headers for ZIP download
         const zipFilename = `${projectCode}_files.zip`;
