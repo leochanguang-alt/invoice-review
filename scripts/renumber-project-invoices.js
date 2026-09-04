@@ -19,7 +19,6 @@ import {
 } from "../lib/invoice-numbering.js";
 
 export const PROJECT_CODE = "Neoss-MoEx-2608";
-export const RUN_ID = "20260904";
 export const EXPECTED_INVOICE_COUNT = 35;
 export const MANIFEST_VERSION = 1;
 const MAX_MANIFEST_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -33,7 +32,10 @@ export const HELP_TEXT = `Usage:
   node scripts/renumber-project-invoices.js --manifest <path> --cleanup --db-verified
 
 Default project mode is dry-run. Cleanup requires both --cleanup and the
-explicit --db-verified confirmation after independent database verification.`;
+explicit --db-verified confirmation after independent database verification.
+The run ID is derived from createdAt's UTC date. Verify accepts expired
+integrity-valid manifests, and cleanup accepts expired integrity-valid manifests;
+stage and finalize reject expired manifests.`;
 
 function requireNonEmpty(value, label) {
     if (typeof value !== "string" || value.length === 0) {
@@ -43,6 +45,24 @@ function requireNonEmpty(value, label) {
 
 function uniqueValues(rows, property) {
     return new Set(rows.map(row => row[property]));
+}
+
+async function copyArchiveWithContext(r2Client, options, phase) {
+    try {
+        return await copyAndVerifyArchive(r2Client, options);
+    } catch (error) {
+        throw new Error(
+            `${phase} copy failed ${options.originalKey} -> ${options.targetKey}: ${error.message}`,
+            { cause: error },
+        );
+    }
+}
+
+export function manifestOutputPath(manifest) {
+    return path.join(
+        OUTPUT_DIRECTORY,
+        `${manifest.projectCode}-${manifest.runId}.json`,
+    );
 }
 
 function canonicalize(value) {
@@ -64,11 +84,20 @@ export function calculateManifestDigest(manifest) {
         .digest("hex")}`;
 }
 
-export function createManifestEnvelope({ projectCode, runId, createdAt, rows }) {
+export function runIdFromCreatedAt(createdAt) {
+    const timestamp = Date.parse(createdAt);
+    if (!Number.isFinite(timestamp)
+        || new Date(timestamp).toISOString() !== createdAt) {
+        throw new Error("createdAt must be a canonical ISO timestamp");
+    }
+    return createdAt.slice(0, 10).replaceAll("-", "");
+}
+
+export function createManifestEnvelope({ projectCode, createdAt, rows }) {
     const manifest = {
         version: MANIFEST_VERSION,
         projectCode,
-        runId,
+        runId: runIdFromCreatedAt(createdAt),
         createdAt,
         rows,
     };
@@ -90,6 +119,7 @@ function compareManifestRows(a, b) {
 export function validateManifest(manifest, {
     now = new Date(),
     maxAgeMs = MAX_MANIFEST_AGE_MS,
+    allowExpired = false,
 } = {}) {
     if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
         throw new Error("manifest must be an integrity envelope");
@@ -113,8 +143,8 @@ export function validateManifest(manifest, {
     if (manifest.projectCode !== PROJECT_CODE) {
         throw new Error(`manifest projectCode must be ${PROJECT_CODE}`);
     }
-    if (manifest.runId !== RUN_ID || !/^\d{8}$/.test(manifest.runId)) {
-        throw new Error(`manifest runId must be ${RUN_ID}`);
+    if (!/^\d{8}$/.test(manifest.runId)) {
+        throw new Error("manifest runId must be an 8-digit UTC date");
     }
     const createdAtMs = Date.parse(manifest.createdAt);
     const nowMs = new Date(now).getTime();
@@ -130,7 +160,7 @@ export function validateManifest(manifest, {
     if (createdAtMs > nowMs + MAX_FUTURE_SKEW_MS) {
         throw new Error("manifest createdAt is in the future");
     }
-    if (nowMs - createdAtMs > maxAgeMs) {
+    if (!allowExpired && nowMs - createdAtMs > maxAgeMs) {
         throw new Error("manifest has expired");
     }
     if (manifest.contentDigest !== calculateManifestDigest(manifest)) {
@@ -204,6 +234,8 @@ export function validateManifest(manifest, {
             throw new Error(`manifest row ${index + 1} oldKey prefix is invalid`);
         }
         if (row.oldKey.includes("\\")
+            || row.oldKey.includes("?")
+            || row.oldKey.includes("#")
             || row.oldKey.split("/").some(part => part === "." || part === "..")
             || /[\u0000-\u001f\u007f]/.test(row.oldKey)) {
             throw new Error(`manifest row ${index + 1} oldKey is unsafe`);
@@ -256,7 +288,13 @@ export function validateManifest(manifest, {
     return manifest;
 }
 
-async function inspectAllSources({ rows, keyProperty, r2Client, bucketName }) {
+async function inspectAllSources({
+    rows,
+    keyProperty,
+    r2Client,
+    bucketName,
+    failureLabel = "object inspection",
+}) {
     const inspections = await Promise.allSettled(rows.map(row =>
         r2Client.send(new HeadObjectCommand({
             Bucket: bucketName,
@@ -287,7 +325,7 @@ async function inspectAllSources({ rows, keyProperty, r2Client, bucketName }) {
         };
     });
     if (errors.length > 0) {
-        throw new Error(`source preflight failed:\n${errors.join("\n")}`);
+        throw new Error(`${failureLabel} failed:\n${errors.join("\n")}`);
     }
     return metadata;
 }
@@ -295,7 +333,6 @@ async function inspectAllSources({ rows, keyProperty, r2Client, bucketName }) {
 export async function buildDryRunManifest({
     invoices,
     projectCode,
-    runId,
     r2Client,
     bucketName,
     createdAt = new Date().toISOString(),
@@ -304,6 +341,7 @@ export async function buildDryRunManifest({
         throw new Error(`expected exactly ${EXPECTED_INVOICE_COUNT} active invoices`);
     }
 
+    const runId = runIdFromCreatedAt(createdAt);
     const invoicesById = new Map(invoices.map(invoice => [invoice.id, invoice]));
     const rows = buildRenumberManifest(invoices, projectCode).map(row => {
         const source = invoicesById.get(row.invoiceId);
@@ -336,7 +374,6 @@ export async function buildDryRunManifest({
     }));
     const manifest = createManifestEnvelope({
         projectCode,
-        runId,
         createdAt,
         rows: manifestRows,
     });
@@ -351,32 +388,45 @@ export async function stageManifest({ manifest, r2Client, bucketName }) {
         keyProperty: "oldKey",
         r2Client,
         bucketName,
+        failureLabel: "source preflight",
     });
-    const changedSources = rows.filter((row, index) => {
+    const changedSources = rows.flatMap((row, index) => {
         const actual = sourceMetadata[index];
-        return actual.size !== row.sourceSize
-            || actual.etag !== row.sourceETag
-            || (row.sourceChecksumSHA256
-                && actual.checksumSHA256 !== row.sourceChecksumSHA256);
+        const reasons = [];
+        if (actual.size !== row.sourceSize) {
+            reasons.push(`size mismatch for ${row.oldKey}: expected ${row.sourceSize}, got ${actual.size}`);
+        }
+        if (actual.etag !== row.sourceETag) {
+            reasons.push(`ETag mismatch for ${row.oldKey}: expected ${row.sourceETag}, got ${actual.etag}`);
+        }
+        if (row.sourceChecksumSHA256
+            && actual.checksumSHA256 !== row.sourceChecksumSHA256) {
+            reasons.push(`checksum mismatch for ${row.oldKey}`);
+        }
+        return reasons;
     });
     if (changedSources.length > 0) {
-        throw new Error(`source preflight failed: size changed for ${changedSources.map(row => row.oldKey).join(", ")}`);
+        throw new Error(`source preflight metadata mismatch:\n${changedSources.join("\n")}`);
     }
 
     for (const row of rows) {
-        await copyAndVerifyArchive(r2Client, {
+        await copyArchiveWithContext(r2Client, {
             bucketName,
             publicUrl: "",
             originalKey: row.oldKey,
             targetKey: row.stagingKey,
-        });
+        }, "stage");
         const [staged] = await inspectAllSources({
             rows: [row],
             keyProperty: "stagingKey",
             r2Client,
             bucketName,
+            failureLabel: "staged verification",
         });
-        verifyCopiedMetadata(row, staged, "staged");
+        verifyCopiedMetadata(row, staged, {
+            label: "staged",
+            key: row.stagingKey,
+        });
     }
 }
 
@@ -384,17 +434,17 @@ function isSinglePartContentETag(etag) {
     return /^[a-f0-9]{32}$/i.test(etag);
 }
 
-function verifyCopiedMetadata(row, actual, label) {
+function verifyCopiedMetadata(row, actual, { label, key }) {
     if (actual.size !== row.sourceSize) {
-        throw new Error(`${label} size mismatch for ${row.newKey}`);
+        throw new Error(`${label} size mismatch for ${key}: expected ${row.sourceSize}, got ${actual.size}`);
     }
     if (row.sourceChecksumSHA256) {
         if (actual.checksumSHA256 !== row.sourceChecksumSHA256) {
-            throw new Error(`${label} checksum mismatch for ${row.newKey}`);
+            throw new Error(`${label} checksum mismatch for ${key}`);
         }
     } else if (isSinglePartContentETag(row.sourceETag)
         && actual.etag !== row.sourceETag) {
-        throw new Error(`${label} ETag mismatch for ${row.newKey}`);
+        throw new Error(`${label} ETag mismatch for ${key}: expected ${row.sourceETag}, got ${actual.etag}`);
     }
     // Multipart ETags are not portable content hashes. With no checksum,
     // require a non-empty target ETag (enforced by inspectAllSources) plus size.
@@ -436,33 +486,41 @@ export async function finalizeManifest({
         keyProperty: "stagingKey",
         r2Client,
         bucketName,
+        failureLabel: "staging preflight",
     });
-    const changedStaging = rows.filter((row, index) => {
+    const changedStaging = rows.flatMap((row, index) => {
         try {
-            verifyCopiedMetadata(row, stagingSizes[index], "staged");
-            return false;
-        } catch {
-            return true;
+            verifyCopiedMetadata(row, stagingSizes[index], {
+                label: "staged",
+                key: row.stagingKey,
+            });
+            return [];
+        } catch (error) {
+            return [error.message];
         }
     });
     if (changedStaging.length > 0) {
-        throw new Error(`source preflight failed: staged size changed for ${changedStaging.map(row => row.stagingKey).join(", ")}`);
+        throw new Error(`staging preflight metadata mismatch:\n${changedStaging.join("\n")}`);
     }
 
     for (const row of rows) {
-        await copyAndVerifyArchive(r2Client, {
+        await copyArchiveWithContext(r2Client, {
             bucketName,
             publicUrl: normalizedPublicUrl,
             originalKey: row.stagingKey,
             targetKey: row.newKey,
-        });
+        }, "finalize");
         const [finalObject] = await inspectAllSources({
             rows: [row],
             keyProperty: "newKey",
             r2Client,
             bucketName,
+            failureLabel: "final verification",
         });
-        verifyCopiedMetadata(row, finalObject, "final");
+        verifyCopiedMetadata(row, finalObject, {
+            label: "final",
+            key: row.newKey,
+        });
     }
     return generateGuardedSql(manifest, {
         projectCode,
@@ -471,15 +529,19 @@ export async function finalizeManifest({
 }
 
 export async function verifyFinalObjects({ manifest, r2Client, bucketName }) {
-    validateManifest(manifest);
+    validateManifest(manifest, { allowExpired: true });
     const metadata = await inspectAllSources({
         rows: manifest.rows,
         keyProperty: "newKey",
         r2Client,
         bucketName,
+        failureLabel: "final verification",
     });
     manifest.rows.forEach((row, index) =>
-        verifyCopiedMetadata(row, metadata[index], "final"));
+        verifyCopiedMetadata(row, metadata[index], {
+            label: "final",
+            key: row.newKey,
+        }));
     return metadata;
 }
 
@@ -492,7 +554,7 @@ export async function cleanupManifest({
     if (dbVerified !== true) {
         throw new Error("explicit DB verification confirmation is required");
     }
-    validateManifest(manifest);
+    validateManifest(manifest, { allowExpired: true });
     await verifyFinalObjects({ manifest, r2Client, bucketName });
 
     const rows = manifest.rows;
@@ -598,6 +660,17 @@ begin
     raise exception 'manifest sequences are not exactly 1 through 35';
   end if;
 
+  if exists (
+    select 1
+    from public.invoices
+    where charge_to_project = (select project_code from renumber_config)
+      and deleted_at is not null
+      and project_sequence is not null
+      and project_sequence between 1 and 35
+  ) then
+    raise exception 'soft-deleted invoice occupies a target project sequence';
+  end if;
+
   insert into private.project_invoice_counters (
     project_code,
     last_sequence,
@@ -661,6 +734,11 @@ begin
       ),
       updated_at = now()
   where project_code = (select project_code from renumber_config);
+
+  get diagnostics changed_rows = row_count;
+  if changed_rows <> 1 then
+    raise exception 'expected to update exactly one project counter, updated %', changed_rows;
+  end if;
 end
 $renumber_update$;
 `;
@@ -748,9 +826,9 @@ function createR2Client() {
     });
 }
 
-async function loadManifest(manifestPath) {
+async function loadManifest(manifestPath, { allowExpired = false } = {}) {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-    return validateManifest(manifest);
+    return validateManifest(manifest, { allowExpired });
 }
 
 async function queryInvoices(projectCode) {
@@ -784,15 +862,11 @@ export async function main(argv = process.argv.slice(2)) {
         const manifest = await buildDryRunManifest({
             invoices,
             projectCode: options.projectCode,
-            runId: RUN_ID,
             r2Client,
             bucketName,
         });
         await mkdir(OUTPUT_DIRECTORY, { recursive: true });
-        const outputPath = path.join(
-            OUTPUT_DIRECTORY,
-            `${options.projectCode}-${RUN_ID}.json`,
-        );
+        const outputPath = manifestOutputPath(manifest);
         await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, {
             flag: "wx",
         });
@@ -800,7 +874,9 @@ export async function main(argv = process.argv.slice(2)) {
         return;
     }
 
-    const manifest = await loadManifest(options.manifestPath);
+    const manifest = await loadManifest(options.manifestPath, {
+        allowExpired: ["verify", "cleanup"].includes(options.action),
+    });
     if (options.action === "stage") {
         await stageManifest({ manifest, r2Client, bucketName });
         console.log(`staged and verified ${manifest.rows.length} objects`);

@@ -14,6 +14,7 @@ import {
     finalizeManifest,
     generateGuardedSql,
     HELP_TEXT,
+    manifestOutputPath,
     parseCliArgs,
     stageManifest,
     validateManifest,
@@ -37,7 +38,8 @@ function makeInvoices() {
     });
 }
 
-function makeManifest() {
+function makeManifest({ createdAt = CREATED_AT } = {}) {
+    const runId = createdAt.slice(0, 10).replaceAll("-", "");
     const rows = makeInvoices()
         .sort((a, b) => a.invoice_date.localeCompare(b.invoice_date) || a.id - b.id)
         .map((invoice, index) => {
@@ -52,7 +54,7 @@ function makeManifest() {
                 oldKey: invoice.achieved_file_id,
                 generatedInvoiceId,
                 newKey: `bui_invoice/projects/${PROJECT_CODE}/${generatedInvoiceId}.pdf`,
-                stagingKey: `bui_invoice/projects/${PROJECT_CODE}/.renumber-${RUN_ID}/${generatedInvoiceId}.pdf`,
+                stagingKey: `bui_invoice/projects/${PROJECT_CODE}/.renumber-${runId}/${generatedInvoiceId}.pdf`,
                 sourceSize: 100 + sequence,
                 sourceETag: `${String(sequence).padStart(32, "0")}`,
                 sourceChecksumSHA256: null,
@@ -60,8 +62,7 @@ function makeManifest() {
         });
     return createManifestEnvelope({
         projectCode: PROJECT_CODE,
-        runId: RUN_ID,
-        createdAt: CREATED_AT,
+        createdAt,
         rows,
     });
 }
@@ -96,6 +97,28 @@ test("manifest envelope verifies metadata integrity and rejects stale or tampere
     );
 });
 
+test("runId, staging prefix, and output filename derive from createdAt UTC date", async () => {
+    const createdAt = "2026-09-03T23:59:59.000Z";
+    const manifest = await buildDryRunManifest({
+        invoices: makeInvoices(),
+        projectCode: PROJECT_CODE,
+        r2Client: {
+            async send() {
+                return { ContentLength: 123, ETag: "00000000000000000000000000000001" };
+            },
+        },
+        bucketName: "bucket",
+        createdAt,
+    });
+    assert.equal(manifest.runId, "20260903");
+    assert.ok(manifest.rows.every(row =>
+        row.stagingKey.includes("/.renumber-20260903/")));
+    assert.equal(
+        manifestOutputPath(manifest),
+        `tmp/renumber-project-invoices/${PROJECT_CODE}-20260903.json`,
+    );
+});
+
 test("default dry-run builds exactly 35 ordered complete rows without R2 mutation", async () => {
     const commands = [];
     const r2Client = {
@@ -111,7 +134,6 @@ test("default dry-run builds exactly 35 ordered complete rows without R2 mutatio
     const manifest = await buildDryRunManifest({
         invoices: makeInvoices(),
         projectCode: PROJECT_CODE,
-        runId: RUN_ID,
         r2Client,
         bucketName: "bucket",
         createdAt: CREATED_AT,
@@ -142,7 +164,6 @@ test("dry-run rejects any row count other than 35 before touching R2", async () 
         buildDryRunManifest({
             invoices: makeInvoices().slice(0, 34),
             projectCode: PROJECT_CODE,
-            runId: RUN_ID,
             r2Client: { async send() { calls += 1; } },
             bucketName: "bucket",
             createdAt: CREATED_AT,
@@ -158,7 +179,6 @@ test("dry-run orders missing invoice dates last and preserves them in the manife
     const manifest = await buildDryRunManifest({
         invoices,
         projectCode: PROJECT_CODE,
-        runId: RUN_ID,
         r2Client: {
             async send() {
                 return { ContentLength: 123, ETag: "00000000000000000000000000000001" };
@@ -201,6 +221,13 @@ test("manifest rejects unsafe IDs, duplicate old keys, and paths outside its pro
     foreignOld.rows[0].oldKey = "bui_invoice/projects/Other/legacy.pdf";
     resign(foreignOld);
     assert.throws(() => validateManifest(foreignOld), /oldKey prefix/);
+
+    for (const suffix of ["invoice.pdf?token=secret", "invoice.pdf#page=1"]) {
+        const ambiguousOld = makeManifest();
+        ambiguousOld.rows[0].oldKey = `bui_invoice/projects/${PROJECT_CODE}/${suffix}`;
+        resign(ambiguousOld);
+        assert.throws(() => validateManifest(ambiguousOld), /oldKey is unsafe/);
+    }
 });
 
 test("manifest ties generated IDs and extensions to sequence, amount, currency, and old key", () => {
@@ -328,9 +355,110 @@ test("stage refuses a source whose size changed since dry-run before any copy", 
     };
     await assert.rejects(
         stageManifest({ manifest, r2Client, bucketName: "bucket" }),
-        /size changed/,
+        /size mismatch/,
     );
     assert.equal(commands.filter(command => command instanceof CopyObjectCommand).length, 0);
+});
+
+test("stage and finalize metadata failures identify the exact key and reason", async () => {
+    const sourceManifest = makeManifest();
+    const sourceRow = sourceManifest.rows[4];
+    await assert.rejects(
+        stageManifest({
+            manifest: sourceManifest,
+            bucketName: "bucket",
+            r2Client: {
+                async send(command) {
+                    const row = sourceManifest.rows.find(item => item.oldKey === command.input.Key);
+                    return {
+                        ContentLength: row.sourceSize,
+                        ETag: row === sourceRow
+                            ? "ffffffffffffffffffffffffffffffff"
+                            : row.sourceETag,
+                    };
+                },
+            },
+        }),
+        error => error.message.includes(sourceRow.oldKey)
+            && /ETag mismatch/.test(error.message),
+    );
+
+    const stagingManifest = makeManifest();
+    const stagingRow = stagingManifest.rows[7];
+    await assert.rejects(
+        finalizeManifest({
+            manifest: stagingManifest,
+            bucketName: "bucket",
+            publicUrl: "https://assets.example",
+            r2Client: {
+                async send(command) {
+                    const row = stagingManifest.rows.find(item =>
+                        item.stagingKey === command.input.Key);
+                    return {
+                        ContentLength: row.sourceSize,
+                        ETag: row === stagingRow
+                            ? "ffffffffffffffffffffffffffffffff"
+                            : row.sourceETag,
+                    };
+                },
+            },
+        }),
+        error => error.message.includes(stagingRow.stagingKey)
+            && /ETag mismatch/.test(error.message),
+    );
+});
+
+test("copy length failures report both source and target keys for stage and finalize", async () => {
+    const stageManifestValue = makeManifest();
+    const stageRow = stageManifestValue.rows[0];
+    await assert.rejects(
+        stageManifest({
+            manifest: stageManifestValue,
+            bucketName: "bucket",
+            r2Client: {
+                async send(command) {
+                    if (!(command instanceof HeadObjectCommand)) return {};
+                    const row = stageManifestValue.rows.find(item =>
+                        item.oldKey === command.input.Key || item.stagingKey === command.input.Key);
+                    return {
+                        ContentLength: command.input.Key === stageRow.stagingKey
+                            ? row.sourceSize - 1
+                            : row.sourceSize,
+                        ETag: row.sourceETag,
+                    };
+                },
+            },
+        }),
+        error => error.message.includes(stageRow.oldKey)
+            && error.message.includes(stageRow.stagingKey)
+            && /length mismatch/.test(error.message),
+    );
+
+    const finalManifestValue = makeManifest();
+    const finalRow = finalManifestValue.rows[0];
+    await assert.rejects(
+        finalizeManifest({
+            manifest: finalManifestValue,
+            bucketName: "bucket",
+            publicUrl: "https://assets.example",
+            r2Client: {
+                async send(command) {
+                    if (!(command instanceof HeadObjectCommand)) return {};
+                    const row = finalManifestValue.rows.find(item =>
+                        item.stagingKey === command.input.Key || item.newKey === command.input.Key);
+                    return {
+                        ContentLength: command.input.Key === finalRow.newKey
+                            ? row.sourceSize - 1
+                            : row.sourceSize,
+                        ETag: row.sourceETag,
+                    };
+                },
+            },
+        }),
+        error => error.message.includes(finalRow.stagingKey)
+            && error.message.includes(finalRow.newKey)
+            && /length mismatch/.test(error.message),
+    );
 });
 
 test("finalize copies only staging objects to final keys and returns guarded SQL", async () => {
@@ -393,7 +521,7 @@ test("finalize preflights every staging object and writes no finals when one is 
             publicUrl: "https://assets.example",
             projectCode: PROJECT_CODE,
         }),
-        /source preflight failed/,
+        /staging preflight failed/,
     );
     assert.equal(commands.filter(command => command instanceof HeadObjectCommand).length, 35);
     assert.equal(commands.filter(command => command instanceof CopyObjectCommand).length, 0);
@@ -430,6 +558,46 @@ test("verify heads all 35 final objects without mutation and enforces usable int
             },
         },
     });
+});
+
+test("verify and cleanup accept an expired valid manifest while stage and finalize reject it", async () => {
+    const manifest = makeManifest({ createdAt: "2026-08-01T12:00:00.000Z" });
+    const commands = [];
+    const r2Client = {
+        async send(command) {
+            commands.push(command);
+            if (command instanceof HeadObjectCommand) {
+                const row = manifest.rows.find(item => item.newKey === command.input.Key);
+                return { ContentLength: row.sourceSize, ETag: row.sourceETag };
+            }
+            return {};
+        },
+    };
+
+    await verifyFinalObjects({ manifest, r2Client, bucketName: "bucket" });
+    assert.equal(commands.length, 35);
+
+    await cleanupManifest({
+        manifest,
+        r2Client,
+        bucketName: "bucket",
+        dbVerified: true,
+    });
+    assert.equal(commands.filter(command => command instanceof DeleteObjectCommand).length, 70);
+
+    await assert.rejects(
+        stageManifest({ manifest, r2Client, bucketName: "bucket" }),
+        /expired/,
+    );
+    await assert.rejects(
+        finalizeManifest({
+            manifest,
+            r2Client,
+            bucketName: "bucket",
+            publicUrl: "https://assets.example",
+        }),
+        /expired/,
+    );
 });
 
 test("cleanup verifies every final first and deletes nothing on size, ETag, or checksum mismatch", async () => {
@@ -534,6 +702,14 @@ test("guarded SQL asserts all rows and old keys, updates archive fields, and set
     assert.match(sql, /currency text not null/i);
     assert.match(sql, /i\.amount is distinct from m\.amount/i);
     assert.match(sql, /upper\(btrim\(coalesce\(i\.currency,\s*''\)\)\) is distinct from m\.currency/i);
+    assert.match(
+        sql,
+        /deleted_at is not null[\s\S]*project_sequence is not null[\s\S]*project_sequence between 1 and 35[\s\S]*raise exception/is,
+    );
+    assert.match(
+        sql,
+        /update private\.project_invoice_counters[\s\S]*get diagnostics\s+\w+\s*=\s*row_count[\s\S]*if\s+\w+\s*<>\s*1/is,
+    );
     for (const row of manifest.rows) {
         assert.match(sql, new RegExp(`\\(${row.invoiceId},\\s*${row.sequence},`));
         assert.ok(sql.includes(row.oldKey));
@@ -601,6 +777,8 @@ test("CLI arguments fail closed", () => {
         dbVerified: false,
     });
     assert.match(HELP_TEXT, /--cleanup --db-verified/);
+    assert.match(HELP_TEXT, /run ID.*createdAt.*UTC/i);
+    assert.match(HELP_TEXT, /verify.*expired.*cleanup.*expired/is);
     assert.deepEqual(parseCliArgs(["--help"]), { action: "help" });
     assert.throws(() => parseCliArgs(["--manifest", "x.json", "--stage", "--finalize"]), /exactly one action/);
     assert.throws(
