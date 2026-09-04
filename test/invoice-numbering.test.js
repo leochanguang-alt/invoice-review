@@ -40,3 +40,65 @@ test("builds a date then id ordered contiguous manifest", () => {
         [3, 3],
     ]);
 });
+
+test("sorts null invoice dates last, including after real 9999-12-31", () => {
+    const manifest = buildRenumberManifest([
+        { id: 1, invoice_date: null, amount: 1, currency: "GBP", achieved_file_id: "old/d.pdf" },
+        { id: 100, invoice_date: "9999-12-31", amount: 1, currency: "GBP", achieved_file_id: "old/a.pdf" },
+        { id: 50, invoice_date: "2026-08-01", amount: 1, currency: "GBP", achieved_file_id: "old/b.pdf" },
+        { id: 2, invoice_date: "", amount: 1, currency: "GBP", achieved_file_id: "old/c.pdf" },
+    ], "P");
+    assert.deepEqual(manifest.map(item => item.invoiceId), [50, 100, 1, 2]);
+});
+
+test("assigns 35 contiguous unique sequence numbers", () => {
+    const invoices = Array.from({ length: 35 }, (_, index) => ({
+        id: 35 - index,
+        invoice_date: `2026-01-${String(index + 1).padStart(2, "0")}`,
+        amount: index + 1,
+        currency: "EUR",
+        achieved_file_id: `old/${index}.pdf`,
+    }));
+    const manifest = buildRenumberManifest(invoices, "Proj");
+    const sequences = manifest.map(item => item.sequence);
+    assert.deepEqual(sequences, Array.from({ length: 35 }, (_, index) => index + 1));
+    assert.equal(new Set(sequences).size, 35);
+});
+
+test("builds newKey using extension from the last path segment only", () => {
+    const manifest = buildRenumberManifest([
+        {
+            id: 1,
+            invoice_date: "2026-08-01",
+            amount: 10,
+            currency: "EUR",
+            achieved_file_id: "archive/nested.pdf/not-really.pdf/file",
+        },
+        {
+            id: 2,
+            invoice_date: "2026-08-02",
+            amount: 5,
+            currency: "SEK",
+            achieved_file_id: "folder.backup/invoice.xlsx",
+        },
+        {
+            id: 3,
+            invoice_date: "2026-08-03",
+            amount: 7,
+            currency: "GBP",
+            achieved_file_id: "folder.pdf/actual.pdf",
+        },
+    ], "Neoss-MoEx-2608");
+    assert.equal(
+        manifest[0].newKey,
+        `bui_invoice/projects/Neoss-MoEx-2608/${manifest[0].generatedInvoiceId}.pdf`,
+    );
+    assert.equal(
+        manifest[1].newKey,
+        `bui_invoice/projects/Neoss-MoEx-2608/${manifest[1].generatedInvoiceId}.xlsx`,
+    );
+    assert.equal(
+        manifest[2].newKey,
+        `bui_invoice/projects/Neoss-MoEx-2608/${manifest[2].generatedInvoiceId}.pdf`,
+    );
+});
