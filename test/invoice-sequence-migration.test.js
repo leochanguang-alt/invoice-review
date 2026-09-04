@@ -19,15 +19,67 @@ test("migration defines private atomic counters and idempotent reservation", asy
     assert.match(sql, /create unique index if not exists invoices_project_sequence_unique[\s\S]*charge_to_project\s*,\s*project_sequence/is);
 });
 
-test("migration parses renamed-project legacy IDs by a bounded trailing sequence", async () => {
+test("migration parses the first sequence after the current project prefix even if amount changed", async () => {
     const sql = await readFile(migrationUrl, "utf8");
 
     assert.match(
         sql,
-        /substring\s*\(\s*i\.generated_invoice_id\s+from\s+'-\(\[0-9\]\{1,7\}\)-\[\^-\]\+\$'\s*\)::integer/is,
+        /when\s+left\s*\(\s*i\.generated_invoice_id\s*,\s*length\s*\(\s*v_project_code\s*\)\s*\+\s*1\s*\)\s*=\s*v_project_code\s*\|\|\s*'-'[\s\S]*substring\s*\(\s*substring\s*\(\s*i\.generated_invoice_id\s+from\s+length\s*\(\s*v_project_code\s*\)\s*\+\s*2\s*\)\s+from\s+'\^\(\[0-9\]\{1,7\}\)-'\s*\)::integer/is,
     );
-    assert.doesNotMatch(sql, /length\s*\(\s*p_project_code\s*\)/i);
     assert.doesNotMatch(sql, /generated_invoice_id\s+like\s+/i);
+});
+
+test("migration parses renamed projects only after matching the row amount and currency suffix", async () => {
+    const sql = await readFile(migrationUrl, "utf8");
+
+    assert.match(
+        sql,
+        /floor\s*\(\s*coalesce\s*\(\s*i\.amount\s*,\s*0\s*\)\s*\+\s*0\.5\s*\)\s+as\s+rounded_amount/i,
+    );
+    assert.match(
+        sql,
+        /upper\s*\(\s*btrim\s*\(\s*coalesce\s*\(\s*i\.currency\s*,\s*''\s*\)\s*\)\s*\)\s+as\s+normalized_currency/i,
+    );
+    assert.match(
+        sql,
+        /right\s*\(\s*i\.generated_invoice_id\s*,\s*length\s*\(\s*history_suffix\.current_suffix\s*\)\s*\)\s*=\s*history_suffix\.current_suffix/i,
+    );
+    assert.match(
+        sql,
+        /left\s*\(\s*i\.generated_invoice_id\s*,\s*length\s*\(\s*i\.generated_invoice_id\s*\)\s*-\s*length\s*\(\s*history_suffix\.current_suffix\s*\)\s*\)[\s\S]*from\s+'-\(\[0-9\]\{1,7\}\)\$'/is,
+    );
+    assert.match(
+        sql,
+        /grant select\s*\([^)]*\bamount\b[^)]*\bcurrency\b[^)]*\)\s+on table public\.invoices/is,
+    );
+});
+
+test("migration does not mistake a four-part legacy ID amount for its sequence", async () => {
+    const sql = await readFile(migrationUrl, "utf8");
+
+    assert.doesNotMatch(
+        sql,
+        /generated_invoice_id\s+from\s+'-\(\[0-9\]\{1,7\}\)-\[\^-\]\+\$'/i,
+    );
+    assert.match(sql, /history_suffix\.current_suffix/i);
+    assert.doesNotMatch(sql, /unique[\s\S]{0,100}generated_invoice_id/i);
+});
+
+test("migration supports current and legacy negative amount suffixes", async () => {
+    const sql = await readFile(migrationUrl, "utf8");
+
+    assert.match(
+        sql,
+        /then\s+'m'\s*\|\|\s*abs\s*\(\s*history_amount\.rounded_amount\s*\)::text[\s\S]*as\s+current_suffix/is,
+    );
+    assert.match(
+        sql,
+        /'-'\s*\|\|\s*history_amount\.rounded_amount::text[\s\S]*as\s+legacy_suffix/is,
+    );
+    assert.match(
+        sql,
+        /history_amount\.rounded_amount\s*<\s*0[\s\S]*right\s*\([^)]*generated_invoice_id[\s\S]*history_suffix\.legacy_suffix/is,
+    );
 });
 
 test("migration keeps private counters outside the Data API and narrows privileges", async () => {
@@ -78,6 +130,6 @@ test("migration rejects deleted invoices and updates the invoice timestamp", asy
     );
     assert.match(
         sql,
-        /grant select\s*\(\s*id\s*,\s*charge_to_project\s*,\s*project_sequence\s*,\s*generated_invoice_id\s*,\s*deleted_at\s*\)/i,
+        /grant select\s*\(\s*id\s*,\s*charge_to_project\s*,\s*project_sequence\s*,\s*generated_invoice_id\s*,\s*deleted_at\b/i,
     );
 });

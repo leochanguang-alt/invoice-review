@@ -82,13 +82,66 @@ begin
     greatest(
       coalesce(max(i.project_sequence), 0),
       coalesce(max(
-        substring(
-          i.generated_invoice_id
-          from '-([0-9]{1,7})-[^-]+$'
-        )::integer
+        case
+          when left(
+            i.generated_invoice_id,
+            length(v_project_code) + 1
+          ) = v_project_code || '-'
+          then substring(
+            substring(
+              i.generated_invoice_id
+              from length(v_project_code) + 2
+            )
+            from '^([0-9]{1,7})-'
+          )::integer
+          when right(
+            i.generated_invoice_id,
+            length(history_suffix.current_suffix)
+          ) = history_suffix.current_suffix
+          then substring(
+            left(
+              i.generated_invoice_id,
+              length(i.generated_invoice_id)
+                - length(history_suffix.current_suffix)
+            )
+            from '-([0-9]{1,7})$'
+          )::integer
+          when history_amount.rounded_amount < 0
+            and right(
+              i.generated_invoice_id,
+              length(history_suffix.legacy_suffix)
+            ) = history_suffix.legacy_suffix
+          then substring(
+            left(
+              i.generated_invoice_id,
+              length(i.generated_invoice_id)
+                - length(history_suffix.legacy_suffix)
+            )
+            from '-([0-9]{1,7})$'
+          )::integer
+          else null
+        end
       ), 0)
     )
   from public.invoices as i
+  cross join lateral (
+    select
+      floor(coalesce(i.amount, 0) + 0.5) as rounded_amount,
+      upper(btrim(coalesce(i.currency, ''))) as normalized_currency
+  ) as history_amount
+  cross join lateral (
+    select
+      '-'
+        || case
+          when history_amount.rounded_amount < 0
+            then 'm' || abs(history_amount.rounded_amount)::text
+          else history_amount.rounded_amount::text
+        end
+        || history_amount.normalized_currency as current_suffix,
+      '-'
+        || history_amount.rounded_amount::text
+        || history_amount.normalized_currency as legacy_suffix
+  ) as history_suffix
   where i.charge_to_project = v_project_code
   on conflict (project_code) do nothing;
 
@@ -140,7 +193,15 @@ revoke all on function public.reserve_invoice_number(bigint, text, numeric, text
 grant usage on schema private to anon, authenticated, service_role;
 grant select, insert, update on table private.project_invoice_counters
   to anon, authenticated, service_role;
-grant select (id, charge_to_project, project_sequence, generated_invoice_id, deleted_at)
+grant select (
+  id,
+  charge_to_project,
+  project_sequence,
+  generated_invoice_id,
+  deleted_at,
+  amount,
+  currency
+)
   on table public.invoices to anon, authenticated, service_role;
 grant update (project_sequence, generated_invoice_id, updated_at)
   on table public.invoices to anon, authenticated, service_role;
