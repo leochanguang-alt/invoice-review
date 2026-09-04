@@ -116,7 +116,7 @@ test("migration normalizes project codes and preserves one reservation per invoi
     assert.doesNotMatch(sql, /charge_to_project\s*=\s*p_project_code/i);
     assert.match(
         sql,
-        /if\s+v_project_sequence\s+is\s+not\s+null\s+and\s+v_generated_invoice_id\s+is\s+not\s+null\s+then[\s\S]*return query/is,
+        /if\s+v_project_sequence\s+is\s+not\s+null\s+and\s+v_generated_invoice_id\s+is\s+not\s+null\s+then/i,
     );
     assert.doesNotMatch(
         sql,
@@ -126,7 +126,29 @@ test("migration normalizes project codes and preserves one reservation per invoi
         sql,
         /set last_sequence\s*=\s*greatest\s*\(\s*last_sequence\s*,\s*coalesce\s*\(\s*v_project_sequence\s*,\s*0\s*\)\s*\)\s*\+\s*1/i,
     );
-    assert.match(sql, /greatest\s*\([\s\S]*max\s*\(\s*i\.project_sequence\s*\)[\s\S]*max\s*\([\s\S]*generated_invoice_id/is);
+    assert.match(
+        sql,
+        /greatest\s*\([\s\S]*else\s+i\.project_sequence[\s\S]*max\s*\([\s\S]*i\.generated_invoice_id/is,
+    );
+});
+
+test("migration reassigns a complete stale number whose project prefix is wrong", async () => {
+    const sql = await readFile(migrationUrl, "utf8");
+
+    assert.match(
+        sql,
+        /v_ignore_stale_number\s+boolean\s*:=\s*false/i,
+    );
+    assert.match(
+        sql,
+        /if\s+v_project_sequence\s+is\s+not\s+null\s+and\s+v_generated_invoice_id\s+is\s+not\s+null\s+then\s+if\s+left\s*\(\s*v_generated_invoice_id\s*,\s*length\s*\(\s*v_project_code\s*\)\s*\+\s*1\s*\)\s*=\s*v_project_code\s*\|\|\s*'-'\s+then[\s\S]*return query[\s\S]*end if;\s+v_project_sequence\s*:=\s*null;\s+v_ignore_stale_number\s*:=\s*true;\s*end if;\s+insert into private\.project_invoice_counters/is,
+    );
+    assert.equal(
+        [...sql.matchAll(
+            /when\s+v_ignore_stale_number\s+and\s+i\.id\s*=\s*p_invoice_id\s+then\s+null/gi,
+        )].length,
+        2,
+    );
 });
 
 test("migration matches JavaScript rounding for negative halves", async () => {

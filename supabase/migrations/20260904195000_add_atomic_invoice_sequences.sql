@@ -50,6 +50,7 @@ declare
   v_generated_invoice_id text;
   v_invoice_project_code text;
   v_deleted_at timestamptz;
+  v_ignore_stale_number boolean := false;
   v_rounded_amount numeric;
   v_amount_part text;
 begin
@@ -93,18 +94,37 @@ begin
   if v_project_sequence is not null
     and v_generated_invoice_id is not null
   then
-    return query
-      select v_project_sequence, v_generated_invoice_id;
-    return;
+    if left(
+      v_generated_invoice_id,
+      length(v_project_code) + 1
+    ) = v_project_code || '-'
+    then
+      return query
+        select v_project_sequence, v_generated_invoice_id;
+      return;
+    end if;
+
+    v_project_sequence := null;
+    v_ignore_stale_number := true;
   end if;
 
   insert into private.project_invoice_counters (project_code, last_sequence)
   select
     v_project_code,
     greatest(
-      coalesce(max(i.project_sequence), 0),
       coalesce(max(
         case
+          when v_ignore_stale_number
+            and i.id = p_invoice_id
+          then null
+          else i.project_sequence
+        end
+      ), 0),
+      coalesce(max(
+        case
+          when v_ignore_stale_number
+            and i.id = p_invoice_id
+          then null
           when left(
             i.generated_invoice_id,
             length(v_project_code) + 1
