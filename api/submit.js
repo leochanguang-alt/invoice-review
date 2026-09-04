@@ -1,5 +1,7 @@
 import { supabase } from "../lib/_supabase.js";
-import { S3Client, CopyObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { copyAndVerifyArchive } from "../lib/invoice-archive.js";
+import { reserveInvoiceNumber } from "../lib/invoice-number-reservation.js";
 
 // R2 Configuration
 const r2 = new S3Client({
@@ -52,52 +54,6 @@ export default async function handler(req, res) {
 
         const validProjectCodes = new Set((projects || []).map(p => p.project_code));
 
-        // Group records by project to generate sequence numbers
-        const projectGroups = {};
-        for (const record of records) {
-            const key = record.projectCode || 'UNKNOWN';
-            if (!projectGroups[key]) {
-                projectGroups[key] = [];
-            }
-            projectGroups[key].push(record);
-        }
-
-        // Get existing Invoice_IDs from Supabase to determine next sequence for each project.
-        // Soft-deleted rows still hold the sequence number so we keep them in the calc.
-        const { data: existingInvoices, error: invErr } = await supabase
-            .from('invoices')
-            .select('generated_invoice_id')
-            .not('generated_invoice_id', 'is', null);
-
-        if (invErr) {
-            console.error("[SUBMIT] Failed to load existing invoices:", invErr.message);
-        }
-
-        const existingInvoiceIds = (existingInvoices || [])
-            .map(inv => inv.generated_invoice_id || '')
-            .filter(id => id);
-
-        // Calculate next sequence number for each project
-        const projectSequences = {};
-        for (const projectCode of Object.keys(projectGroups)) {
-            let maxSeq = 0;
-            for (const invoiceId of existingInvoiceIds) {
-                // Format: ProjectCode-Seq-AmountCurrency
-                if (invoiceId.startsWith(projectCode + '-')) {
-                    const remaining = invoiceId.substring(projectCode.length + 1);
-                    const parts = remaining.split('-');
-                    if (parts.length >= 1) {
-                        const seqNum = parseInt(parts[0]);
-                        if (!isNaN(seqNum) && seqNum > maxSeq) {
-                            maxSeq = seqNum;
-                        }
-                    }
-                }
-            }
-            projectSequences[projectCode] = maxSeq;
-            console.log(`[SUBMIT] Project ${projectCode} max sequence: ${maxSeq}`);
-        }
-
         const results = [];
 
         for (const record of records) {
@@ -105,15 +61,6 @@ export default async function handler(req, res) {
             const recordId = rowNumber; // rowNumber is actually Supabase id
             let fileId = inputFileId || "";
             console.log(`[SUBMIT] Processing record ${recordId}, fileId: "${fileId}", project: "${projectCode}"`);
-            // Generate Invoice_ID
-            const seq = ++projectSequences[projectCode || 'UNKNOWN'];
-            const seqStr = seq.toString().padStart(4, '0');
-            const amountStr = amount ? amount.toString().replace(/,/g, '') : '0';
-            const amountNum = Math.round(parseFloat(amountStr) || 0);
-
-            // Handle negative amounts with 'm' prefix
-            const amountPart = amountNum < 0 ? `m${Math.abs(amountNum)}` : String(amountNum);
-            const invoiceId = `${projectCode}-${seqStr}-${amountPart}${currency}`;
 
             // File Archiving to R2
             let archivedLink = "";
@@ -146,6 +93,31 @@ export default async function handler(req, res) {
             if (isSoftDeleted) {
                 console.warn(`[SUBMIT] Skipping soft-deleted record ${recordId}`);
                 results.push({ recordId, success: false, error: 'Record is deleted' });
+                continue;
+            }
+
+            let invoiceId;
+            try {
+                const reservation = await reserveInvoiceNumber(supabase, {
+                    invoiceId: recordId,
+                    projectCode,
+                    amount,
+                    currency,
+                });
+                invoiceId = reservation.generatedInvoiceId;
+                console.log(
+                    `[SUBMIT] Reserved ${invoiceId} (sequence ${reservation.projectSequence})`,
+                );
+            } catch (reservationErr) {
+                console.error(
+                    `[SUBMIT] RESERVATION ERROR for record ${recordId}:`,
+                    reservationErr.message,
+                );
+                results.push({
+                    recordId,
+                    success: false,
+                    error: reservationErr.message,
+                });
                 continue;
             }
 
@@ -217,40 +189,41 @@ export default async function handler(req, res) {
                     // Copy file to project folder with new name
                     const targetKey = `${R2_PROJECTS_PREFIX}/${projectCode}/${invoiceId}${fileExtension}`;
 
-                    // URL encode the CopySource path (required by S3/R2 for special characters like spaces)
-                    const encodedOriginalKey = originalKey.split('/').map(part => encodeURIComponent(part)).join('/');
-
                     console.log(`[SUBMIT] Copying ${originalKey} -> ${targetKey}`);
 
-                    await r2.send(new CopyObjectCommand({
-                        Bucket: BUCKET_NAME,
-                        CopySource: `${BUCKET_NAME}/${encodedOriginalKey}`,
-                        Key: targetKey
+                    ({ archivedFileId, archivedLink } = await copyAndVerifyArchive(r2, {
+                        bucketName: BUCKET_NAME,
+                        publicUrl: R2_PUBLIC_URL,
+                        originalKey,
+                        targetKey,
                     }));
-
-                    archivedFileId = targetKey;
-                    archivedLink = `${R2_PUBLIC_URL}/${targetKey}`;
                     console.log(`[SUBMIT] Archived OK: ${targetKey}`);
                 } catch (archiveErr) {
                     console.error(`[SUBMIT] ARCHIVE ERROR for record ${recordId}:`, archiveErr.message);
+                    results.push({
+                        recordId,
+                        success: false,
+                        error: archiveErr.message,
+                    });
+                    continue;
                 }
             } else {
                 console.warn(`[SUBMIT] Could not locate original file for record ${recordId}, fileId: ${fileId}`);
+                results.push({
+                    recordId,
+                    success: false,
+                    error: 'Could not locate original file',
+                });
+                continue;
             }
 
             // Update Supabase record
             const updateData = {
                 status: 'Submitted',
-                generated_invoice_id: invoiceId,
+                achieved_file_link: archivedLink,
+                achieved_file_id: archivedFileId,
                 updated_at: new Date().toISOString()
             };
-
-            if (archivedLink) {
-                updateData.achieved_file_link = archivedLink; // supabase column name
-            }
-            if (archivedFileId) {
-                updateData.achieved_file_id = archivedFileId; // supabase column name
-            }
 
             const { error: updateErr } = await supabase
                 .from('invoices')

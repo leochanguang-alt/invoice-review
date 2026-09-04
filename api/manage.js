@@ -4,6 +4,10 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { google } from "googleapis";
 import { getDriveAuth } from "../lib/_sheets.js";
 import { validateInvoiceProjectDate } from "../lib/project-date-validation.js";
+import {
+    applyInvoiceSequenceInvariant,
+    mapInvoiceSequenceFields,
+} from "../lib/invoice-update-invariants.js";
 
 // Currency-Country linking helper
 async function getCurrencyList() {
@@ -463,6 +467,7 @@ export default async function handler(req, res) {
                             status: 'waiting for confirm',
                             charge_to_project: null,
                             generated_invoice_id: null,
+                            project_sequence: null,
                             achieved_file_link: null,
                             achieved_file_id: null
                         };
@@ -611,6 +616,30 @@ export default async function handler(req, res) {
                     // Auto-link currency and country for invoices
                     const currencyList = await getCurrencyList();
                     linkCurrencyCountry(updateData, currencyList);
+
+                    if (
+                        Object.prototype.hasOwnProperty.call(updateData, 'generated_invoice_id')
+                        || Object.prototype.hasOwnProperty.call(updateData, 'charge_to_project')
+                    ) {
+                        const { data: currentInvoice, error: currentInvoiceError } = await supabase
+                            .from('invoices')
+                            .select('charge_to_project')
+                            .eq('id', recordId)
+                            .maybeSingle();
+
+                        if (currentInvoiceError) {
+                            console.error("[MANAGE] Invoice sequence lookup error:", currentInvoiceError);
+                            return json(res, 500, {
+                                success: false,
+                                message: currentInvoiceError.message,
+                            });
+                        }
+
+                        updateData = applyInvoiceSequenceInvariant(
+                            updateData,
+                            currentInvoice || {},
+                        );
+                    }
 
                     if (!allowOutOfRange && updateData.charge_to_project && updateData.invoice_date) {
                         const { data: project, error: projectError } = await supabase
@@ -773,6 +802,8 @@ function mapInvoiceData(data) {
         const raw = data['Remarks'] !== undefined ? data['Remarks'] : data['remarks'];
         mapped.remarks = (raw == null ? '' : String(raw)).slice(0, 30);
     }
+
+    Object.assign(mapped, mapInvoiceSequenceFields(data));
 
     return mapped;
 }
