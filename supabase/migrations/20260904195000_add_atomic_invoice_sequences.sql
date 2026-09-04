@@ -22,6 +22,8 @@ create unique index if not exists invoices_project_sequence_unique
   on public.invoices (charge_to_project, project_sequence)
   where project_sequence is not null;
 
+-- Do not add a unique index on generated_invoice_id: production has historical exact duplicates.
+-- New reservation uniqueness is guaranteed by (charge_to_project, project_sequence).
 create table if not exists private.project_invoice_counters (
   project_code text primary key,
   last_sequence integer not null check (last_sequence >= 0),
@@ -46,6 +48,8 @@ declare
   v_project_code text;
   v_project_sequence integer;
   v_generated_invoice_id text;
+  v_invoice_project_code text;
+  v_deleted_at timestamptz;
   v_rounded_amount numeric;
   v_amount_part text;
 begin
@@ -56,21 +60,39 @@ begin
       using errcode = '22023';
   end if;
 
-  select i.project_sequence, i.generated_invoice_id
-    into v_project_sequence, v_generated_invoice_id
+  select
+    i.project_sequence,
+    i.generated_invoice_id,
+    i.charge_to_project,
+    i.deleted_at
+  into
+    v_project_sequence,
+    v_generated_invoice_id,
+    v_invoice_project_code,
+    v_deleted_at
   from public.invoices as i
   where i.id = p_invoice_id
-    and i.charge_to_project = v_project_code
-    and i.deleted_at is null
   for update;
 
   if not found then
-    raise exception 'invoice % does not belong to project %',
-      p_invoice_id, v_project_code
+    raise exception 'invoice % not found', p_invoice_id
       using errcode = 'P0002';
   end if;
 
-  if v_project_sequence is not null then
+  if v_deleted_at is not null then
+    raise exception 'invoice % is deleted', p_invoice_id
+      using errcode = 'P0002';
+  end if;
+
+  if v_invoice_project_code is distinct from v_project_code then
+    raise exception 'invoice % belongs to project %, not %',
+      p_invoice_id, v_invoice_project_code, v_project_code
+      using errcode = '22023';
+  end if;
+
+  if v_project_sequence is not null
+    and v_generated_invoice_id is not null
+  then
     return query
       select v_project_sequence, v_generated_invoice_id;
     return;
@@ -146,7 +168,10 @@ begin
   on conflict (project_code) do nothing;
 
   update private.project_invoice_counters
-  set last_sequence = last_sequence + 1,
+  set last_sequence = greatest(
+        last_sequence,
+        coalesce(v_project_sequence, 0)
+      ) + 1,
       updated_at = now()
   where project_code = v_project_code
   returning last_sequence into v_project_sequence;

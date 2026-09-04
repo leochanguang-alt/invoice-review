@@ -62,7 +62,18 @@ test("migration does not mistake a four-part legacy ID amount for its sequence",
         /generated_invoice_id\s+from\s+'-\(\[0-9\]\{1,7\}\)-\[\^-\]\+\$'/i,
     );
     assert.match(sql, /history_suffix\.current_suffix/i);
-    assert.doesNotMatch(sql, /unique[\s\S]{0,100}generated_invoice_id/i);
+    assert.doesNotMatch(
+        sql,
+        /create\s+unique(?:\s+index)?[\s\S]{0,100}generated_invoice_id/i,
+    );
+    assert.match(
+        sql,
+        /do not add[^\n]*unique[^\n]*generated_invoice_id[^\n]*historical[^\n]*exact duplicates/i,
+    );
+    assert.match(
+        sql,
+        /new[^\n]*uniqueness[^\n]*project_sequence/i,
+    );
 });
 
 test("migration supports current and legacy negative amount suffixes", async () => {
@@ -103,7 +114,18 @@ test("migration normalizes project codes and preserves one reservation per invoi
     assert.match(sql, /charge_to_project\s*=\s*v_project_code/i);
     assert.match(sql, /where project_code\s*=\s*v_project_code/i);
     assert.doesNotMatch(sql, /charge_to_project\s*=\s*p_project_code/i);
-    assert.match(sql, /if\s+v_project_sequence\s+is\s+not\s+null[\s\S]*return query/is);
+    assert.match(
+        sql,
+        /if\s+v_project_sequence\s+is\s+not\s+null\s+and\s+v_generated_invoice_id\s+is\s+not\s+null\s+then[\s\S]*return query/is,
+    );
+    assert.doesNotMatch(
+        sql,
+        /if\s+v_project_sequence\s+is\s+not\s+null\s+then/i,
+    );
+    assert.match(
+        sql,
+        /set last_sequence\s*=\s*greatest\s*\(\s*last_sequence\s*,\s*coalesce\s*\(\s*v_project_sequence\s*,\s*0\s*\)\s*\)\s*\+\s*1/i,
+    );
     assert.match(sql, /greatest\s*\([\s\S]*max\s*\(\s*i\.project_sequence\s*\)[\s\S]*max\s*\([\s\S]*generated_invoice_id/is);
 });
 
@@ -122,7 +144,15 @@ test("migration rejects deleted invoices and updates the invoice timestamp", asy
 
     assert.match(
         sql,
-        /from public\.invoices as i[\s\S]*i\.deleted_at\s+is\s+null[\s\S]*for update/is,
+        /select[\s\S]*i\.charge_to_project[\s\S]*i\.deleted_at[\s\S]*from public\.invoices as i[\s\S]*where i\.id\s*=\s*p_invoice_id[\s\S]*for update/is,
+    );
+    assert.match(
+        sql,
+        /if\s+v_deleted_at\s+is\s+not\s+null\s+then[\s\S]*raise exception 'invoice % is deleted'/is,
+    );
+    assert.match(
+        sql,
+        /if\s+v_invoice_project_code\s+is\s+distinct\s+from\s+v_project_code\s+then[\s\S]*raise exception 'invoice % belongs to project %, not %'/is,
     );
     assert.match(
         sql,
