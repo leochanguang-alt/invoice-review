@@ -6,14 +6,15 @@ import {
     mapInvoiceSequenceFields,
 } from "../lib/invoice-update-invariants.js";
 
-test("maps direct and frontend invoice sequence fields without dropping explicit clears", () => {
+test("maps project changes but rejects all client invoice ID field names", () => {
     assert.deepEqual(
         mapInvoiceSequenceFields({
             generated_invoice_id: null,
             charge_to_project: "Project-B",
+            "Invoice ID": "FORGED-1",
+            Invoice_ID: "FORGED-2",
         }),
         {
-            generated_invoice_id: null,
             charge_to_project: "Project-B",
         },
     );
@@ -23,7 +24,6 @@ test("maps direct and frontend invoice sequence fields without dropping explicit
             "Charge to Project": null,
         }),
         {
-            generated_invoice_id: "",
             charge_to_project: null,
         },
     );
@@ -37,8 +37,10 @@ test("clears project sequence when generated invoice ID is explicitly cleared", 
         ),
         {
             generated_invoice_id: null,
-            status: "waiting for confirm",
+            status: "Waiting for Confirm",
             project_sequence: null,
+            achieved_file_id: null,
+            achieved_file_link: null,
         },
     );
     assert.deepEqual(
@@ -49,6 +51,9 @@ test("clears project sequence when generated invoice ID is explicitly cleared", 
         {
             generated_invoice_id: null,
             project_sequence: null,
+            achieved_file_id: null,
+            achieved_file_link: null,
+            status: "Waiting for Confirm",
         },
     );
 });
@@ -62,6 +67,10 @@ test("clears project sequence when charge-to project changes", () => {
         {
             charge_to_project: "Project-B",
             project_sequence: null,
+            generated_invoice_id: null,
+            achieved_file_id: null,
+            achieved_file_link: null,
+            status: "Waiting for Confirm",
         },
     );
 });

@@ -2,6 +2,11 @@ import { supabase } from "../lib/_supabase.js";
 import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { copyAndVerifyArchive } from "../lib/invoice-archive.js";
 import { reserveInvoiceNumber } from "../lib/invoice-number-reservation.js";
+import { extensionFromOldKey } from "../lib/invoice-numbering.js";
+import {
+    buildSubmitMessage,
+    requireSingleSubmittedUpdate,
+} from "../lib/invoice-submission.js";
 
 // R2 Configuration
 const r2 = new S3Client({
@@ -42,17 +47,6 @@ export default async function handler(req, res) {
             console.warn("[SUBMIT] No records provided.");
             return json(res, 400, { success: false, message: 'No records provided' });
         }
-
-        // Load projects from Supabase
-        const { data: projects, error: projectsErr } = await supabase
-            .from('projects')
-            .select('project_code, project_name');
-
-        if (projectsErr) {
-            console.error("[SUBMIT] Failed to load projects:", projectsErr.message);
-        }
-
-        const validProjectCodes = new Set((projects || []).map(p => p.project_code));
 
         const results = [];
 
@@ -137,11 +131,8 @@ export default async function handler(req, res) {
                 
                 const urlMatch = decodedLink.match(/bui_invoice\/.*$/);
                 if (urlMatch) {
-                    originalKey = urlMatch[0];
-                    const parts = originalKey.split('.');
-                    if (parts.length > 1) {
-                        fileExtension = '.' + parts[parts.length - 1];
-                    }
+                    originalKey = urlMatch[0].split(/[?#]/, 1)[0];
+                    fileExtension = extensionFromOldKey(originalKey);
                     console.log(`[SUBMIT] Found original key from DB R2 link: ${originalKey}`);
                 }
             }
@@ -151,11 +142,8 @@ export default async function handler(req, res) {
                 try {
                     // Check if fileId is already an R2 key path
                     if (fileId.includes('/')) {
-                        originalKey = fileId;
-                        const parts = fileId.split('.');
-                        if (parts.length > 1) {
-                            fileExtension = '.' + parts[parts.length - 1];
-                        }
+                        originalKey = fileId.split(/[?#]/, 1)[0];
+                        fileExtension = extensionFromOldKey(originalKey);
                     } else {
                         // fileId is a Google Drive ID - try to find the file in R2
                         console.log(`[SUBMIT] Looking for file with Google Drive ID: ${fileId}`);
@@ -225,17 +213,20 @@ export default async function handler(req, res) {
                 updated_at: new Date().toISOString()
             };
 
-            const { error: updateErr } = await supabase
+            const updateResult = await supabase
                 .from('invoices')
                 .update(updateData)
-                .eq('id', recordId);
+                .eq('id', recordId)
+                .eq('generated_invoice_id', invoiceId)
+                .select('id');
 
-            if (updateErr) {
-                console.error(`[SUBMIT] Update error for record ${recordId}:`, updateErr.message);
-                results.push({ recordId, success: false, error: updateErr.message });
-            } else {
+            try {
+                requireSingleSubmittedUpdate(updateResult);
                 console.log(`[SUBMIT] Successfully submitted record ${recordId} as ${invoiceId}`);
                 results.push({ recordId, success: true, invoiceId, archivedLink });
+            } catch (updateErr) {
+                console.error(`[SUBMIT] Update error for record ${recordId}:`, updateErr.message);
+                results.push({ recordId, success: false, error: updateErr.message });
             }
         }
 
@@ -244,7 +235,7 @@ export default async function handler(req, res) {
 
         return json(res, 200, {
             success: failCount === 0,
-            message: `Submitted ${successCount} record(s)${failCount > 0 ? `, ${failCount} failed` : ''}`,
+            message: buildSubmitMessage(results),
             submittedCount: successCount,
             results
         });

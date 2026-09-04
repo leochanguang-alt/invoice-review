@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
     buildRenumberManifest,
+    extensionFromOldKey,
     formatInvoiceId,
     parseProjectSequence,
 } from "../lib/invoice-numbering.js";
@@ -101,4 +102,12 @@ test("builds newKey using extension from the last path segment only", () => {
         manifest[2].newKey,
         `bui_invoice/projects/Neoss-MoEx-2608/${manifest[2].generatedInvoiceId}.pdf`,
     );
+});
+
+test("extracts an extension from the basename after removing URL query and fragment", () => {
+    assert.equal(
+        extensionFromOldKey("folder.with.dot/invoice.final.PDF?token=a.b#page=2"),
+        ".PDF",
+    );
+    assert.equal(extensionFromOldKey("folder.pdf/no-extension?token=.jpg"), ".pdf");
 });

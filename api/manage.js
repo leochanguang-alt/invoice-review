@@ -464,7 +464,7 @@ export default async function handler(req, res) {
 
                         // 4. Update invoice status and restore/clear fields
                         const updateData = {
-                            status: 'waiting for confirm',
+                            status: 'Waiting for Confirm',
                             charge_to_project: null,
                             generated_invoice_id: null,
                             project_sequence: null,
@@ -625,6 +625,7 @@ export default async function handler(req, res) {
                             .from('invoices')
                             .select('charge_to_project')
                             .eq('id', recordId)
+                            .is('deleted_at', null)
                             .maybeSingle();
 
                         if (currentInvoiceError) {
@@ -634,10 +635,16 @@ export default async function handler(req, res) {
                                 message: currentInvoiceError.message,
                             });
                         }
+                        if (!currentInvoice) {
+                            return json(res, 404, {
+                                success: false,
+                                message: "Record not found",
+                            });
+                        }
 
                         updateData = applyInvoiceSequenceInvariant(
                             updateData,
-                            currentInvoice || {},
+                            currentInvoice,
                         );
                     }
 

@@ -1,4 +1,5 @@
 import { supabase } from "../lib/_supabase.js";
+import { applyInvoiceSequenceInvariant } from "../lib/invoice-update-invariants.js";
 
 const CONFIRMED_STATUS = process.env.CONFIRMED_STATUS || "Confirmed";
 
@@ -56,7 +57,7 @@ export default async function handler(req, res) {
     // We also need deleted_at so we can refuse to confirm a soft-deleted row.
     const { data: invoice, error: fetchErr } = await supabase
       .from('invoices')
-      .select('amount, currency, invoice_date, amount_hkd, deleted_at')
+      .select('amount, currency, invoice_date, amount_hkd, charge_to_project, deleted_at')
       .eq('id', recordId)
       .single();
 
@@ -73,7 +74,7 @@ export default async function handler(req, res) {
     }
 
     // Build update object
-    const updates = {
+    let updates = {
       status: CONFIRMED_STATUS,
       updated_at: new Date().toISOString()
     };
@@ -81,8 +82,9 @@ export default async function handler(req, res) {
     if (chargeToCompany) {
       updates.charge_to_company = chargeToCompany;
     }
-    if (chargeToProject) {
+    if (Object.prototype.hasOwnProperty.call(body, 'chargeToProject')) {
       updates.charge_to_project = chargeToProject;
+      updates = applyInvoiceSequenceInvariant(updates, invoice);
     }
 
     // Auto-calculate amount_hkd if it's missing
