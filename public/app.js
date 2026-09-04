@@ -2228,21 +2228,43 @@ async function saveRecordChanges() {
             saveBtn.innerText = 'Saving...';
         }
 
-        const res = await fetch('/api/manage', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'update',
-                sheet: 'main',
-                rowNumber: rowNumber,
-                data: data
-            })
-        });
-        const json = await res.json();
-        if (json.success) {
+        const postUpdate = async (allowOutOfRange = false) => {
+            const response = await fetch('/api/manage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'update',
+                    sheet: 'main',
+                    rowNumber: rowNumber,
+                    data: data,
+                    allow_out_of_range: allowOutOfRange
+                })
+            });
+
+            return { response, json: await response.json() };
+        };
+
+        let result = await postUpdate();
+
+        if (
+            result.response.status === 409 &&
+            result.json.code === 'INVOICE_DATE_OUTSIDE_PROJECT_RANGE'
+        ) {
+            const warning = result.json.warning;
+            const proceed = confirm(
+                `Invoice date ${warning.invoiceDate} is outside project ` +
+                `${warning.projectCode} (${warning.projectStartDate} to ${warning.projectEndDate}).\n\n` +
+                'Save anyway?'
+            );
+
+            if (!proceed) return;
+            result = await postUpdate(true);
+        }
+
+        if (result.json.success) {
             await loadReviewRecords();
         } else {
-            alert('Failed to save: ' + json.message);
+            alert('Failed to save: ' + result.json.message);
         }
     } catch (e) {
         console.error(e);

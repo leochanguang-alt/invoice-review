@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } fr
 import { Upload } from "@aws-sdk/lib-storage";
 import { google } from "googleapis";
 import { getDriveAuth } from "../lib/_sheets.js";
+import { validateInvoiceProjectDate } from "../lib/project-date-validation.js";
 
 // Currency-Country linking helper
 async function getCurrencyList() {
@@ -209,7 +210,13 @@ export default async function handler(req, res) {
 
         } else if (req.method === "POST") {
             const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-            const { action, sheet: tableKey, rowNumber, data } = body;
+            const {
+                action,
+                sheet: tableKey,
+                rowNumber,
+                data,
+                allow_out_of_range: allowOutOfRange
+            } = body;
 
             // === FIX PROJECT FOLDERS ACTION ===
             if (action === "fix-folders") {
@@ -604,6 +611,40 @@ export default async function handler(req, res) {
                     // Auto-link currency and country for invoices
                     const currencyList = await getCurrencyList();
                     linkCurrencyCountry(updateData, currencyList);
+
+                    if (!allowOutOfRange && updateData.charge_to_project && updateData.invoice_date) {
+                        const { data: project, error: projectError } = await supabase
+                            .from('projects')
+                            .select('project_code, project_name, create_date, end_date')
+                            .eq('project_code', updateData.charge_to_project)
+                            .maybeSingle();
+
+                        if (projectError) {
+                            console.error("[MANAGE] Project date lookup error:", projectError);
+                            return json(res, 500, { success: false, message: projectError.message });
+                        }
+
+                        if (project) {
+                            const warning = validateInvoiceProjectDate({
+                                invoiceDate: updateData.invoice_date,
+                                projectStartDate: project.create_date,
+                                projectEndDate: project.end_date
+                            });
+
+                            if (warning.outOfRange) {
+                                return json(res, 409, {
+                                    success: false,
+                                    code: "INVOICE_DATE_OUTSIDE_PROJECT_RANGE",
+                                    message: "Invoice date is outside the selected project period",
+                                    warning: {
+                                        ...warning,
+                                        projectCode: project.project_code,
+                                        projectName: project.project_name
+                                    }
+                                });
+                            }
+                        }
+                    }
                 } else if (tableKey === 'company') {
                     if (data['Company Name'] !== undefined) updateData.company_name = data['Company Name'];
                     if (data['Country'] !== undefined) updateData.country = data['Country'];
