@@ -13,6 +13,14 @@ test("confirm applies the shared sequence invariant when project input is presen
         source,
         /hasOwnProperty\.call\(body,\s*['"]chargeToProject['"]\)[\s\S]*applyInvoiceSequenceInvariant/,
     );
+    assert.match(
+        source,
+        /hasOwnProperty\.call\(body,\s*['"]chargeToProject['"]\)[\s\S]*Charge to project cannot be empty/,
+    );
+    assert.match(
+        source,
+        /updates\.status\s*===\s*['"]Waiting for Confirm['"][\s\S]*json\(res,\s*409,[\s\S]*status:\s*updates\.status/,
+    );
 });
 
 test("submit conditionally finalizes the exact reserved invoice", async () => {
@@ -31,7 +39,11 @@ test("manage sequence lookup excludes deleted rows and rejects a missing row", a
 
     assert.match(
         source,
-        /\.select\(['"]charge_to_project['"]\)[\s\S]*\.eq\(['"]id['"],\s*recordId\)[\s\S]*\.is\(['"]deleted_at['"],\s*null\)[\s\S]*\.maybeSingle\(\)/,
+        /\.select\(\s*['"][^'"]*charge_to_project[^'"]*generated_invoice_id[^'"]*achieved_file_id[^'"]*achieved_file_link[^'"]*['"]\s*,?\s*\)[\s\S]*\.eq\(['"]id['"],\s*recordId\)[\s\S]*\.is\(['"]deleted_at['"],\s*null\)[\s\S]*\.maybeSingle\(\)/,
     );
     assert.match(source, /if\s*\(\s*!currentInvoice\s*\)[\s\S]*Record not found/);
+    assert.match(
+        source,
+        /validateInvoiceProjectChange\(\s*updateData,\s*currentInvoice,?\s*\)[\s\S]*json\(res,\s*409/,
+    );
 });

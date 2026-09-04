@@ -4,6 +4,7 @@ import test from "node:test";
 import {
     applyInvoiceSequenceInvariant,
     mapInvoiceSequenceFields,
+    validateInvoiceProjectChange,
 } from "../lib/invoice-update-invariants.js";
 
 test("maps project changes but rejects all client invoice ID field names", () => {
@@ -62,7 +63,12 @@ test("clears project sequence when charge-to project changes", () => {
     assert.deepEqual(
         applyInvoiceSequenceInvariant(
             { charge_to_project: "Project-B" },
-            { charge_to_project: "Project-A" },
+            {
+                charge_to_project: "Project-A",
+                project_sequence: 7,
+                generated_invoice_id: "Project-A-0007-10EUR",
+                achieved_file_id: "projects/Project-A/invoice.pdf",
+            },
         ),
         {
             charge_to_project: "Project-B",
@@ -71,6 +77,51 @@ test("clears project sequence when charge-to project changes", () => {
             achieved_file_id: null,
             achieved_file_link: null,
             status: "Waiting for Confirm",
+        },
+    );
+});
+
+test("preserves confirm status when an unnumbered unarchived invoice changes project", () => {
+    assert.deepEqual(
+        applyInvoiceSequenceInvariant(
+            { charge_to_project: "Project-B", status: "Confirmed" },
+            {
+                charge_to_project: "Project-A",
+                project_sequence: null,
+                generated_invoice_id: null,
+                achieved_file_id: null,
+                achieved_file_link: null,
+            },
+        ),
+        { charge_to_project: "Project-B", status: "Confirmed" },
+    );
+});
+
+test("rejects clearing the project from a numbered or archived invoice", () => {
+    assert.deepEqual(
+        validateInvoiceProjectChange(
+            { charge_to_project: "" },
+            {
+                charge_to_project: "Project-A",
+                generated_invoice_id: "Project-A-0007-10EUR",
+            },
+        ),
+        {
+            valid: false,
+            message: "Charge to project cannot be cleared after invoice numbering or archiving",
+        },
+    );
+    assert.deepEqual(
+        validateInvoiceProjectChange(
+            { charge_to_project: null },
+            {
+                charge_to_project: "Project-A",
+                achieved_file_link: "https://files.example/invoice.pdf",
+            },
+        ),
+        {
+            valid: false,
+            message: "Charge to project cannot be cleared after invoice numbering or archiving",
         },
     );
 });

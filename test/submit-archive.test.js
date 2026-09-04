@@ -79,3 +79,21 @@ test("rejects a missing or empty source before copying", async () => {
     assert.equal(commands.length, 1);
     assert.ok(commands[0] instanceof HeadObjectCommand);
 });
+
+test("provides a concrete reason when source Head fails without a message", async () => {
+    const r2 = {
+        async send() {
+            throw new Error("");
+        },
+    };
+
+    await assert.rejects(
+        copyAndVerifyArchive(r2, {
+            bucketName: "bucket",
+            publicUrl: "https://files.example",
+            originalKey: "original/a.pdf",
+            targetKey: "projects/P/a.pdf",
+        }),
+        /Failed to inspect archive source original\/a\.pdf: unknown R2 HeadObject error/,
+    );
+});

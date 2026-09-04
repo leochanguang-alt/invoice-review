@@ -1,5 +1,8 @@
 import { supabase } from "../lib/_supabase.js";
-import { applyInvoiceSequenceInvariant } from "../lib/invoice-update-invariants.js";
+import {
+  applyInvoiceSequenceInvariant,
+  invoiceUpdateRequiresReset,
+} from "../lib/invoice-update-invariants.js";
 
 const CONFIRMED_STATUS = process.env.CONFIRMED_STATUS || "Confirmed";
 
@@ -52,12 +55,21 @@ export default async function handler(req, res) {
     if (!recordId) {
       return json(res, 400, { success: false, message: "Missing record ID" });
     }
+    const hasProjectInput = Object.prototype.hasOwnProperty.call(body, 'chargeToProject');
+    if (hasProjectInput && !String(chargeToProject ?? '').trim()) {
+      return json(res, 400, {
+        success: false,
+        message: "Charge to project cannot be empty",
+      });
+    }
 
     // Fetch the invoice record to auto-calculate amount_hkd if missing.
     // We also need deleted_at so we can refuse to confirm a soft-deleted row.
     const { data: invoice, error: fetchErr } = await supabase
       .from('invoices')
-      .select('amount, currency, invoice_date, amount_hkd, charge_to_project, deleted_at')
+      .select(
+        'amount, currency, invoice_date, amount_hkd, charge_to_project, project_sequence, generated_invoice_id, achieved_file_id, achieved_file_link, deleted_at',
+      )
       .eq('id', recordId)
       .single();
 
@@ -82,8 +94,10 @@ export default async function handler(req, res) {
     if (chargeToCompany) {
       updates.charge_to_company = chargeToCompany;
     }
-    if (Object.prototype.hasOwnProperty.call(body, 'chargeToProject')) {
+    let projectResetRequired = false;
+    if (hasProjectInput) {
       updates.charge_to_project = chargeToProject;
+      projectResetRequired = invoiceUpdateRequiresReset(updates, invoice);
       updates = applyInvoiceSequenceInvariant(updates, invoice);
     }
 
@@ -110,6 +124,14 @@ export default async function handler(req, res) {
     if (error) {
       console.error("[CONFIRM] Supabase error:", error);
       return json(res, 500, { success: false, message: error.message });
+    }
+
+    if (projectResetRequired && updates.status === 'Waiting for Confirm') {
+      return json(res, 409, {
+        success: false,
+        message: "Project changed; invoice number and archive were cleared. Please confirm again.",
+        status: updates.status,
+      });
     }
 
     console.log(`[CONFIRM] Record ${recordId} confirmed successfully`);

@@ -1959,31 +1959,29 @@ function filterProjectsByCompany(selectedValue) {
     if (!companySelect || !projectSelect) return;
 
     const selectedCompanyId = companySelect.value;
+    const projectOptions = buildProjectOptions(
+        projectsList,
+        selectedCompanyId,
+        selectedValue,
+    );
 
-    if (!selectedCompanyId) {
+    if (!selectedCompanyId && projectOptions.length === 0) {
         projectSelect.innerHTML = '<option value="">-- Select Company First --</option>';
         return;
     }
 
-    // Filter projects by Company_ID field (case-insensitive) and exclude archived projects
-    const filteredProjects = projectsList.filter(p => {
-        const projectCompanyId = (p['Company_ID'] || p['Company ID'] || '').toLowerCase();
-        const isArchived = p.archived === true || p['archived'] === true || p.Status === 'Achieved';
-        return projectCompanyId === selectedCompanyId.toLowerCase() && !isArchived;
-    });
-
-    if (filteredProjects.length === 0) {
+    if (projectOptions.length === 0) {
         projectSelect.innerHTML = '<option value="">-- No Projects Found --</option>';
         return;
     }
 
     projectSelect.innerHTML = '<option value="">-- Select --</option>' +
-        filteredProjects.map(p => {
-            const projectCode = (p['Project Code'] || p['Project_ID'] || '').trim();
-            const normalizedValue = (selectedValue || '').toString().trim();
-            const isSelected = normalizedValue && projectCode.toLowerCase() === normalizedValue.toLowerCase();
-            const selected = isSelected ? 'selected' : '';
-            return `<option value="${projectCode}" ${selected}>${projectCode}</option>`;
+        projectOptions.map(option => {
+            const selected = option.selected ? 'selected' : '';
+            const label = option.inactiveCurrent
+                ? `${option.value} (Archived/Inactive)`
+                : option.value;
+            return `<option value="${option.value}" ${selected}>${label}</option>`;
         }).join('');
 }
 

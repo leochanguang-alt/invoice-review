@@ -7,6 +7,7 @@ import { validateInvoiceProjectDate } from "../lib/project-date-validation.js";
 import {
     applyInvoiceSequenceInvariant,
     mapInvoiceSequenceFields,
+    validateInvoiceProjectChange,
 } from "../lib/invoice-update-invariants.js";
 
 // Currency-Country linking helper
@@ -623,7 +624,9 @@ export default async function handler(req, res) {
                     ) {
                         const { data: currentInvoice, error: currentInvoiceError } = await supabase
                             .from('invoices')
-                            .select('charge_to_project')
+                            .select(
+                                'charge_to_project, project_sequence, generated_invoice_id, achieved_file_id, achieved_file_link',
+                            )
                             .eq('id', recordId)
                             .is('deleted_at', null)
                             .maybeSingle();
@@ -639,6 +642,18 @@ export default async function handler(req, res) {
                             return json(res, 404, {
                                 success: false,
                                 message: "Record not found",
+                            });
+                        }
+
+                        const projectValidation = validateInvoiceProjectChange(
+                            updateData,
+                            currentInvoice,
+                        );
+                        if (!projectValidation.valid) {
+                            return json(res, 409, {
+                                success: false,
+                                code: "NUMBERED_INVOICE_PROJECT_REQUIRED",
+                                message: projectValidation.message,
                             });
                         }
 
