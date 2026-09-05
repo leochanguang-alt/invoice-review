@@ -1186,6 +1186,9 @@ async function saveRow() {
         if (json.success) {
             document.getElementById('edit-modal').style.display = 'none';
             await loadManageView();
+            if (json.sequenceReset) {
+                alert(json.warning || 'Invoice numbering and archive fields were reset. The existing R2 archive object was retained.');
+            }
         } else {
             alert("Save failed: " + json.message);
         }
@@ -1978,10 +1981,12 @@ function filterProjectsByCompany(selectedValue) {
     projectSelect.innerHTML = '<option value="">-- Select --</option>' +
         projectOptions.map(option => {
             const selected = option.selected ? 'selected' : '';
-            const label = option.inactiveCurrent
+            const rawLabel = option.inactiveCurrent
                 ? `${option.value} (Archived/Inactive)`
                 : option.value;
-            return `<option value="${option.value}" ${selected}>${label}</option>`;
+            const escapedValue = escapeProjectOptionHtml(option.value);
+            const escapedLabel = escapeProjectOptionHtml(rawLabel);
+            return `<option value="${escapedValue}" ${selected}>${escapedLabel}</option>`;
         }).join('');
 }
 
@@ -2261,6 +2266,9 @@ async function saveRecordChanges() {
 
         if (result.json.success) {
             await loadReviewRecords();
+            if (result.json.sequenceReset) {
+                alert(result.json.warning || 'Invoice numbering and archive fields were reset. The existing R2 archive object was retained.');
+            }
         } else {
             alert('Failed to save: ' + result.json.message);
         }
@@ -2555,40 +2563,34 @@ async function executeExport() {
         progressStatus.textContent = 'Generating Excel file...';
         progressFill.style.width = '40%';
 
-        // Prepare Excel data with full R2 path
-        const excelData = projectInvoices.map(inv => {
-            // Build full R2 path from achieved_file_id (archived file in project folder)
-            let r2FilePath = '';
+        const archivePathFor = (inv) => {
             const achievedFileId = inv['achieved_file_id'] || '';
             const achievedFileLink = inv['achieved_file_link'] || '';
-            const generatedInvoiceId = inv['generated_invoice_id'] || inv['Invoice ID'] || '';
-
-            if (achievedFileId) {
-                // achieved_file_id contains the R2 key path
-                if (achievedFileId.startsWith('bui_invoice/')) {
-                    r2FilePath = `buiservice-assets/${achievedFileId}`;
-                } else if (achievedFileId.includes('/')) {
-                    r2FilePath = achievedFileId;
-                } else {
-                    // It's just a filename or hash, build full path
-                    r2FilePath = `buiservice-assets/bui_invoice/projects/${projectCode}/${generatedInvoiceId}.pdf`;
-                }
-            } else if (achievedFileLink) {
-                // Extract path from achieved_file_link URL
-                const pathMatch = achievedFileLink.match(/(bui_invoice\/projects\/[^?]+)/);
-                r2FilePath = pathMatch ? `buiservice-assets/${pathMatch[1]}` : '';
-            } else if (generatedInvoiceId && projectCode) {
-                // Fallback: Generate expected R2 path based on generated invoice ID
-                r2FilePath = `buiservice-assets/bui_invoice/projects/${projectCode}/${generatedInvoiceId}.pdf`;
+            if (achievedFileId.startsWith('bui_invoice/')) {
+                return `buiservice-assets/${achievedFileId}`;
             }
+            if (achievedFileId.includes('/')) {
+                return achievedFileId;
+            }
+            const pathMatch = achievedFileLink.match(/(bui_invoice\/projects\/[^?]+)/);
+            return pathMatch ? `buiservice-assets/${pathMatch[1]}` : '';
+        };
+        const missingArchives = projectInvoices.filter(inv => !archivePathFor(inv));
+        if (missingArchives.length > 0) {
+            throw new Error(
+                `Cannot export: ${missingArchives.length} invoice(s) are missing archived file paths.`
+            );
+        }
 
+        // Prepare Excel data using only persisted archive paths.
+        const excelData = projectInvoices.map(inv => {
             return {
                 'Date': inv['Invoice Date'] || inv['invoice_date'] || '',
                 'Vendor': inv['Vender'] || inv['Vendor'] || inv['vendor'] || '',
                 'Original Amount': `${inv['Amount'] || ''} ${inv['Currency'] || ''}`.trim(),
                 'Category': inv['Category'] || inv['category'] || '',
                 'Owner': inv['Owner'] || inv['owner'] || '',
-                'R2 File Path': r2FilePath
+                'R2 File Path': archivePathFor(inv)
             };
         });
 

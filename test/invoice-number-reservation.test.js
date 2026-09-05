@@ -81,3 +81,45 @@ test("returns the same reserved invoice number on retry", async () => {
     assert.deepEqual(retry, first);
     assert.equal(supabase.calls.length, 2);
 });
+
+test("rejects an empty RPC response instead of dereferencing or returning undefined", async () => {
+    const supabase = {
+        async rpc() {
+            return { data: [], error: null };
+        },
+    };
+
+    await assert.rejects(
+        reserveInvoiceNumber(supabase, {
+            invoiceId: 42,
+            projectCode: "Project-A",
+            amount: 10,
+            currency: "EUR",
+        }),
+        /empty reservation response/i,
+    );
+});
+
+test("normalizes record IDs to safe positive integers and rejects unsafe input before RPC", async () => {
+    const supabase = new ReservationFake();
+    await reserveInvoiceNumber(supabase, {
+        invoiceId: "42",
+        projectCode: "Project-A",
+        amount: 10,
+        currency: "EUR",
+    });
+    assert.equal(supabase.calls[0].input.p_invoice_id, 42);
+
+    for (const invoiceId of [0, -1, 1.5, "not-a-number", Number.MAX_SAFE_INTEGER + 1]) {
+        await assert.rejects(
+            reserveInvoiceNumber(supabase, {
+                invoiceId,
+                projectCode: "Project-A",
+                amount: 10,
+                currency: "EUR",
+            }),
+            /safe positive integer/i,
+        );
+    }
+    assert.equal(supabase.calls.length, 1);
+});

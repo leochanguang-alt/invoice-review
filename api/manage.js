@@ -6,6 +6,7 @@ import { getDriveAuth } from "../lib/_sheets.js";
 import { validateInvoiceProjectDate } from "../lib/project-date-validation.js";
 import {
     applyInvoiceSequenceInvariant,
+    invoiceUpdateRequiresReset,
     mapInvoiceSequenceFields,
     validateInvoiceProjectChange,
 } from "../lib/invoice-update-invariants.js";
@@ -353,18 +354,26 @@ export default async function handler(req, res) {
                 for (const invoiceId of invoiceIds) {
                     try {
                         // 1. Get the invoice record to find file info — skip soft-deleted ones.
-                        const { data: invoice, error: fetchError } = await supabase
+                        const { data: invoices, error: fetchError } = await supabase
                             .from('invoices')
                             .select('*')
                             .eq('generated_invoice_id', invoiceId)
                             .is('deleted_at', null)
-                            .single();
+                            .limit(2);
 
                         if (fetchError) {
                             console.error(`[MANAGE] Could not find invoice ${invoiceId}:`, fetchError.message);
                             updateErrors.push({ id: invoiceId, error: fetchError.message });
                             continue;
                         }
+                        if (!Array.isArray(invoices) || invoices.length !== 1) {
+                            const reason = invoices?.length > 1
+                                ? "generated invoice ID is ambiguous"
+                                : "invoice not found";
+                            updateErrors.push({ id: invoiceId, error: reason });
+                            continue;
+                        }
+                        const invoice = invoices[0];
 
                         // 2. Delete file from R2 project folder (achieved file)
                         if (r2 && BUCKET_NAME && projectCode && invoice) {
@@ -605,6 +614,7 @@ export default async function handler(req, res) {
                 // Map frontend field names to Supabase column names for update
                 // Note: not all tables have updated_at column
                 let updateData = {};
+                let sequenceReset = false;
                 
                 // Only add updated_at for tables that have this column
                 if (tableKey !== 'projects') {
@@ -657,6 +667,10 @@ export default async function handler(req, res) {
                             });
                         }
 
+                        sequenceReset = invoiceUpdateRequiresReset(
+                            updateData,
+                            currentInvoice,
+                        );
                         updateData = applyInvoiceSequenceInvariant(
                             updateData,
                             currentInvoice,
@@ -752,7 +766,16 @@ export default async function handler(req, res) {
                 }
 
                 console.log(`[MANAGE] Updated ${tableName} record ${recordId}`);
-                return json(res, 200, { success: true, message: "Row updated" });
+                return json(res, 200, {
+                    success: true,
+                    message: "Row updated",
+                    ...(sequenceReset ? {
+                        code: "INVOICE_SEQUENCE_RESET",
+                        sequenceReset: true,
+                        archiveRetained: true,
+                        warning: "Invoice numbering and archive fields were reset. The existing R2 archive object was retained.",
+                    } : {}),
+                });
 
             } else if (action === "delete") {
                 const recordId = rowNumber;

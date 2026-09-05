@@ -50,6 +50,7 @@ declare
   v_generated_invoice_id text;
   v_invoice_project_code text;
   v_deleted_at timestamptz;
+  v_project_archived boolean;
   v_ignore_stale_number boolean := false;
   v_rounded_amount numeric;
   v_amount_part text;
@@ -59,6 +60,21 @@ begin
   if v_project_code is null or v_project_code = '' then
     raise exception 'project code is required'
       using errcode = '22023';
+  end if;
+
+  select p.archived
+  into v_project_archived
+  from public.projects as p
+  where p.project_code = v_project_code;
+
+  if not found then
+    raise exception 'project % not found', v_project_code
+      using errcode = 'P0002';
+  end if;
+
+  if v_project_archived is true then
+    raise exception 'project % is archived', v_project_code
+      using errcode = '55000';
   end if;
 
   select
@@ -217,6 +233,18 @@ begin
     || v_amount_part
     || upper(btrim(coalesce(p_currency, '')));
 
+  if exists (
+    select 1
+    from public.invoices as i
+    where i.charge_to_project = v_project_code
+      and i.id <> p_invoice_id
+      and i.generated_invoice_id = v_generated_invoice_id
+  ) then
+    raise exception 'generated invoice ID % already exists in project %',
+      v_generated_invoice_id, v_project_code
+      using errcode = '23505';
+  end if;
+
   update public.invoices as i
   set project_sequence = v_project_sequence,
       generated_invoice_id = v_generated_invoice_id,
@@ -250,6 +278,8 @@ grant select (
   on table public.invoices to anon, authenticated, service_role;
 grant update (project_sequence, generated_invoice_id, updated_at)
   on table public.invoices to anon, authenticated, service_role;
+grant select (project_code, archived)
+  on table public.projects to anon, authenticated, service_role;
 grant execute on function public.reserve_invoice_number(bigint, text, numeric, text)
   to anon, authenticated;
 grant execute on function public.reserve_invoice_number(bigint, text, numeric, text)

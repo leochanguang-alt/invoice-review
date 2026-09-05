@@ -9,9 +9,20 @@ test("copies an archive and verifies the target before returning its metadata", 
     const r2 = {
         async send(command) {
             commands.push(command);
-            return command instanceof HeadObjectCommand
-                ? { ContentLength: 123 }
-                : {};
+            if (command instanceof HeadObjectCommand) {
+                if (commands.length === 2) {
+                    const error = new Error("not found");
+                    error.name = "NotFound";
+                    error.$metadata = { httpStatusCode: 404 };
+                    throw error;
+                }
+                return {
+                    ContentLength: 123,
+                    ETag: '"same-etag"',
+                    ChecksumSHA256: "same-checksum",
+                };
+            }
+            return {};
         },
     };
 
@@ -22,13 +33,15 @@ test("copies an archive and verifies the target before returning its metadata", 
         targetKey: "projects/P/P-0001-1EUR.pdf",
     });
 
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 4);
     assert.ok(commands[0] instanceof HeadObjectCommand);
-    assert.ok(commands[1] instanceof CopyObjectCommand);
-    assert.ok(commands[2] instanceof HeadObjectCommand);
+    assert.ok(commands[1] instanceof HeadObjectCommand);
+    assert.ok(commands[2] instanceof CopyObjectCommand);
+    assert.ok(commands[3] instanceof HeadObjectCommand);
     assert.equal(commands[0].input.Key, "original files/a b.pdf");
-    assert.equal(commands[1].input.CopySource, "bucket/original%20files/a%20b.pdf");
-    assert.equal(commands[2].input.Key, "projects/P/P-0001-1EUR.pdf");
+    assert.equal(commands[1].input.Key, "projects/P/P-0001-1EUR.pdf");
+    assert.equal(commands[2].input.CopySource, "bucket/original%20files/a%20b.pdf");
+    assert.equal(commands[3].input.Key, "projects/P/P-0001-1EUR.pdf");
     assert.deepEqual(result, {
         archivedFileId: "projects/P/P-0001-1EUR.pdf",
         archivedLink: "https://files.example/projects/P/P-0001-1EUR.pdf",
@@ -41,6 +54,12 @@ test("rejects an archive target whose length differs from the source", async () 
         async send(command) {
             if (command instanceof HeadObjectCommand) {
                 headCount += 1;
+                if (headCount === 2) {
+                    const error = new Error("not found");
+                    error.name = "NotFound";
+                    error.$metadata = { httpStatusCode: 404 };
+                    throw error;
+                }
                 return { ContentLength: headCount === 1 ? 123 : 122 };
             }
             return {};
@@ -56,6 +75,54 @@ test("rejects an archive target whose length differs from the source", async () 
         }),
         /length mismatch/,
     );
+});
+
+test("treats an existing byte-identical target as idempotent without copying", async () => {
+    const commands = [];
+    const r2 = {
+        async send(command) {
+            commands.push(command);
+            return {
+                ContentLength: 123,
+                ETag: '"same-etag"',
+                ChecksumSHA256: "same-checksum",
+            };
+        },
+    };
+
+    const result = await copyAndVerifyArchive(r2, {
+        bucketName: "bucket",
+        publicUrl: "https://files.example",
+        originalKey: "original/a.pdf",
+        targetKey: "projects/P/a.pdf",
+    });
+
+    assert.equal(commands.length, 2);
+    assert.ok(commands.every(command => command instanceof HeadObjectCommand));
+    assert.equal(result.archivedFileId, "projects/P/a.pdf");
+});
+
+test("refuses to overwrite an existing target with different metadata", async () => {
+    const commands = [];
+    const r2 = {
+        async send(command) {
+            commands.push(command);
+            return commands.length === 1
+                ? { ContentLength: 123, ETag: '"source"', ChecksumSHA256: "source-sum" }
+                : { ContentLength: 123, ETag: '"target"', ChecksumSHA256: "target-sum" };
+        },
+    };
+
+    await assert.rejects(
+        copyAndVerifyArchive(r2, {
+            bucketName: "bucket",
+            publicUrl: "https://files.example",
+            originalKey: "original/a.pdf",
+            targetKey: "projects/P/a.pdf",
+        }),
+        /refusing to overwrite.*metadata mismatch/i,
+    );
+    assert.equal(commands.filter(command => command instanceof CopyObjectCommand).length, 0);
 });
 
 test("rejects a missing or empty source before copying", async () => {

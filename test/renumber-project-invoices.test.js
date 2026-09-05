@@ -12,13 +12,18 @@ import {
     cleanupManifest,
     createManifestEnvelope,
     finalizeManifest,
+    generateFreezeSql,
     generateGuardedSql,
+    generateRollbackSql,
+    generateUnfreezeSql,
     HELP_TEXT,
     manifestOutputPath,
     parseCliArgs,
     stageManifest,
     validateManifest,
+    verifyDatabaseState,
     verifyFinalObjects,
+    writeManifestExclusive,
 } from "../scripts/renumber-project-invoices.js";
 
 const PROJECT_CODE = "Neoss-MoEx-2608";
@@ -34,6 +39,11 @@ function makeInvoices() {
             amount: index + 0.6,
             currency: index % 2 ? "EUR" : "SEK",
             achieved_file_id: `bui_invoice/projects/${PROJECT_CODE}/legacy/${id}.pdf`,
+            achieved_file_link: index % 3 === 0
+                ? null
+                : `https://legacy.example/${id}.pdf`,
+            generated_invoice_id: index % 4 === 0 ? null : `legacy-${id}`,
+            project_sequence: index % 5 === 0 ? null : 100 + index,
         };
     });
 }
@@ -51,6 +61,9 @@ function makeManifest({ createdAt = CREATED_AT } = {}) {
                 sequence,
                 amount: invoice.amount,
                 currency: invoice.currency,
+                oldGeneratedInvoiceId: invoice.generated_invoice_id,
+                oldAchievedFileLink: invoice.achieved_file_link,
+                oldProjectSequence: invoice.project_sequence,
                 oldKey: invoice.achieved_file_id,
                 generatedInvoiceId,
                 newKey: `bui_invoice/projects/${PROJECT_CODE}/${generatedInvoiceId}.pdf`,
@@ -76,6 +89,26 @@ function resign(manifest) {
     return manifest;
 }
 
+function makeVerifiedSupabase(manifest) {
+    const data = manifest.rows.map(row => ({
+        id: row.invoiceId,
+        project_sequence: row.sequence,
+        generated_invoice_id: row.generatedInvoiceId,
+        achieved_file_id: row.newKey,
+    }));
+    return {
+        from: () => ({
+            select: () => ({
+                in: () => ({
+                    eq: () => ({
+                        is: async () => ({ data, error: null }),
+                    }),
+                }),
+            }),
+        }),
+    };
+}
+
 test("manifest envelope verifies metadata integrity and rejects stale or tampered content", () => {
     const manifest = makeManifest();
     assert.equal(manifest.version, 1);
@@ -97,6 +130,33 @@ test("manifest envelope verifies metadata integrity and rejects stale or tampere
     );
 });
 
+test("manifest preserves nullable pre-migration invoice values in its schema and digest", () => {
+    const manifest = makeManifest();
+    const first = manifest.rows[0];
+
+    assert.ok(Object.hasOwn(first, "oldGeneratedInvoiceId"));
+    assert.ok(Object.hasOwn(first, "oldAchievedFileLink"));
+    assert.ok(Object.hasOwn(first, "oldProjectSequence"));
+    assert.equal(first.oldGeneratedInvoiceId, makeInvoices()
+        .sort((a, b) => a.invoice_date.localeCompare(b.invoice_date) || a.id - b.id)[0]
+        .generated_invoice_id);
+
+    for (const property of [
+        "oldGeneratedInvoiceId",
+        "oldAchievedFileLink",
+        "oldProjectSequence",
+    ]) {
+        const tampered = structuredClone(manifest);
+        tampered.rows[0][property] = property === "oldProjectSequence" ? 999 : "tampered";
+        assert.throws(() => validateManifest(tampered), /digest mismatch/);
+    }
+
+    const invalid = structuredClone(manifest);
+    invalid.rows[0].oldProjectSequence = "7";
+    resign(invalid);
+    assert.throws(() => validateManifest(invalid), /oldProjectSequence/);
+});
+
 test("runId, staging prefix, and output filename derive from createdAt UTC date", async () => {
     const createdAt = "2026-09-03T23:59:59.000Z";
     const manifest = await buildDryRunManifest({
@@ -116,6 +176,18 @@ test("runId, staging prefix, and output filename derive from createdAt UTC date"
     assert.equal(
         manifestOutputPath(manifest),
         `tmp/renumber-project-invoices/${PROJECT_CODE}-20260903.json`,
+    );
+});
+
+test("exclusive manifest creation reports how to reuse a same-day manifest", async () => {
+    const manifest = makeManifest();
+    await assert.rejects(
+        writeManifestExclusive("existing.json", manifest, async () => {
+            const error = new Error("already exists");
+            error.code = "EEXIST";
+            throw error;
+        }),
+        /already exists.*reuse.*--manifest existing\.json/is,
     );
 });
 
@@ -265,12 +337,20 @@ test("stage heads every source before copying and verifies staged lengths", asyn
     const manifest = makeManifest();
     const rows = rowsOf(manifest);
     const commands = [];
+    const targetHeads = new Set();
     const r2Client = {
         async send(command) {
             commands.push(command);
             if (command instanceof HeadObjectCommand) {
                 const row = rows.find(item =>
                     item.oldKey === command.input.Key || item.stagingKey === command.input.Key);
+                if (row?.stagingKey === command.input.Key
+                    && !targetHeads.has(command.input.Key)) {
+                    targetHeads.add(command.input.Key);
+                    const error = new Error("not found");
+                    error.name = "NotFound";
+                    throw error;
+                }
                 return { ContentLength: row.sourceSize, ETag: row.sourceETag };
             }
             return {};
@@ -288,7 +368,7 @@ test("stage heads every source before copying and verifies staged lengths", asyn
     assert.equal(commands.filter(command => command instanceof CopyObjectCommand).length, 35);
     assert.equal(commands.filter(command =>
         command instanceof HeadObjectCommand
-        && rows.some(row => row.stagingKey === command.input.Key)).length, 70);
+        && rows.some(row => row.stagingKey === command.input.Key)).length, 105);
 });
 
 test("stage percent-encodes every CopySource segment including Unicode, spaces, plus, and percent", async () => {
@@ -297,11 +377,20 @@ test("stage percent-encodes every CopySource segment including Unicode, spaces, 
     row.oldKey = `bui_invoice/projects/${PROJECT_CODE}/旧 发票/+plus/%percent.pdf`;
     resign(manifest);
     const commands = [];
+    const targetHeads = new Set();
     const r2Client = {
         async send(command) {
             commands.push(command);
             const matched = manifest.rows.find(item =>
                 item.oldKey === command.input.Key || item.stagingKey === command.input.Key);
+            if (command instanceof HeadObjectCommand
+                && matched?.stagingKey === command.input.Key
+                && !targetHeads.has(command.input.Key)) {
+                targetHeads.add(command.input.Key);
+                const error = new Error("not found");
+                error.name = "NotFound";
+                throw error;
+            }
             return command instanceof HeadObjectCommand
                 ? { ContentLength: matched.sourceSize, ETag: matched.sourceETag }
                 : {};
@@ -465,12 +554,20 @@ test("finalize copies only staging objects to final keys and returns guarded SQL
     const manifest = makeManifest();
     const rows = rowsOf(manifest);
     const commands = [];
+    const targetHeads = new Set();
     const r2Client = {
         async send(command) {
             commands.push(command);
             if (command instanceof HeadObjectCommand) {
                 const row = rows.find(item =>
                     item.stagingKey === command.input.Key || item.newKey === command.input.Key);
+                if (row?.newKey === command.input.Key
+                    && !targetHeads.has(command.input.Key)) {
+                    targetHeads.add(command.input.Key);
+                    const error = new Error("not found");
+                    error.name = "NotFound";
+                    throw error;
+                }
                 return { ContentLength: row.sourceSize, ETag: row.sourceETag };
             }
             return {};
@@ -582,6 +679,7 @@ test("verify and cleanup accept an expired valid manifest while stage and finali
         r2Client,
         bucketName: "bucket",
         dbVerified: true,
+        supabase: makeVerifiedSupabase(manifest),
     });
     assert.equal(commands.filter(command => command instanceof DeleteObjectCommand).length, 70);
 
@@ -666,10 +764,118 @@ test("cleanup requires explicit DB verification and never deletes old keys that 
         r2Client,
         bucketName: "bucket",
         dbVerified: true,
+        supabase: makeVerifiedSupabase(manifest),
     });
     assert.ok(!deleted.includes(rows[0].oldKey));
     assert.ok(rows.every(row => deleted.includes(row.stagingKey)));
     assert.equal(commands.filter(command => command instanceof DeleteObjectCommand).length, deleted.length);
+});
+
+test("cleanup independently verifies all 35 manifest rows in Supabase before any delete", async () => {
+    const manifest = makeManifest();
+    const commands = [];
+    const dbRows = manifest.rows.map(row => ({
+        id: row.invoiceId,
+        project_sequence: row.sequence,
+        generated_invoice_id: row.generatedInvoiceId,
+        achieved_file_id: row.newKey,
+    }));
+    const supabase = {
+        from(table) {
+            assert.equal(table, "invoices");
+            return {
+                select(columns) {
+                    assert.match(columns, /achieved_file_id/);
+                    return {
+                        in(column, ids) {
+                            assert.equal(column, "id");
+                            assert.equal(ids.length, 35);
+                            return {
+                                eq() {
+                                    return {
+                                        is: async () => ({ data: dbRows, error: null }),
+                                    };
+                                },
+                            };
+                        },
+                    };
+                },
+            };
+        },
+    };
+    const r2Client = {
+        async send(command) {
+            commands.push(command);
+            if (command instanceof HeadObjectCommand) {
+                const row = manifest.rows.find(item => item.newKey === command.input.Key);
+                return { ContentLength: row.sourceSize, ETag: row.sourceETag };
+            }
+            return {};
+        },
+    };
+
+    await cleanupManifest({
+        manifest,
+        r2Client,
+        bucketName: "bucket",
+        dbVerified: true,
+        supabase,
+    });
+    assert.equal(commands.filter(command => command instanceof DeleteObjectCommand).length, 70);
+
+    dbRows[12].generated_invoice_id = "unexpected";
+    commands.length = 0;
+    await assert.rejects(
+        cleanupManifest({
+            manifest,
+            r2Client,
+            bucketName: "bucket",
+            dbVerified: true,
+            supabase,
+        }),
+        /database verification failed.*invoice.*generated_invoice_id/is,
+    );
+    assert.equal(commands.filter(command => command instanceof DeleteObjectCommand).length, 0);
+});
+
+test("database verification fails closed on query errors, missing rows, and field mismatches", async () => {
+    const manifest = makeManifest();
+    const rows = manifest.rows.map(row => ({
+        id: row.invoiceId,
+        project_sequence: row.sequence,
+        generated_invoice_id: row.generatedInvoiceId,
+        achieved_file_id: row.newKey,
+    }));
+    const makeSupabase = result => ({
+        from: () => ({
+            select: () => ({
+                in: () => ({
+                    eq: () => ({
+                        is: async () => result,
+                    }),
+                }),
+            }),
+        }),
+    });
+
+    await verifyDatabaseState({
+        manifest,
+        supabase: makeSupabase({ data: rows, error: null }),
+    });
+    await assert.rejects(
+        verifyDatabaseState({
+            manifest,
+            supabase: makeSupabase({ data: rows.slice(0, 34), error: null }),
+        }),
+        /exactly 35/,
+    );
+    await assert.rejects(
+        verifyDatabaseState({
+            manifest,
+            supabase: makeSupabase({ data: null, error: { message: "db down" } }),
+        }),
+        /db down/,
+    );
 });
 
 test("guarded SQL asserts all rows and old keys, updates archive fields, and sets counter to 35", () => {
@@ -716,6 +922,46 @@ test("guarded SQL asserts all rows and old keys, updates archive fields, and set
         assert.ok(sql.includes(row.newKey));
     }
     assert.match(sql, /on commit drop/i);
+    assert.match(
+        sql,
+        /from public\.projects[\s\S]*project_code[\s\S]*archived is true[\s\S]*raise exception/is,
+    );
+});
+
+test("rollback SQL guards current values, clears sequences first, restores old nullable values, and never lowers counter", () => {
+    const manifest = makeManifest();
+    const sql = generateRollbackSql(manifest, {
+        projectCode: PROJECT_CODE,
+        publicUrl: "https://assets.example/",
+    });
+
+    assert.match(sql, /exactly 35/i);
+    assert.match(sql, /archived is true/i);
+    assert.match(sql, /i\.project_sequence is distinct from m\.new_project_sequence/i);
+    assert.match(sql, /i\.generated_invoice_id is distinct from m\.new_generated_invoice_id/i);
+    assert.match(sql, /i\.achieved_file_id is distinct from m\.new_key/i);
+    assert.match(sql, /i\.achieved_file_link is distinct from m\.new_link/i);
+    const clearPosition = sql.search(/set project_sequence = null/i);
+    const restorePosition = sql.search(/set project_sequence = m\.old_project_sequence/i);
+    assert.ok(clearPosition >= 0 && restorePosition > clearPosition);
+    assert.match(sql, /generated_invoice_id = m\.old_generated_invoice_id/i);
+    assert.match(sql, /achieved_file_id = m\.old_key/i);
+    assert.match(sql, /achieved_file_link = m\.old_achieved_file_link/i);
+    assert.match(sql, /last_sequence\s*=\s*greatest\([^)]*last_sequence[^)]*35/is);
+    assert.doesNotMatch(sql, /last_sequence\s*=\s*(?:0|m\.old_project_sequence)/i);
+});
+
+test("freeze and unfreeze SQL are explicit guarded commands and never execute automatically", () => {
+    const manifest = makeManifest();
+    const freeze = generateFreezeSql(manifest);
+    const unfreeze = generateUnfreezeSql(manifest);
+
+    assert.match(freeze, /update public\.projects[\s\S]*set archived = true/is);
+    assert.match(unfreeze, /update public\.projects[\s\S]*set archived = false/is);
+    assert.match(freeze, new RegExp(PROJECT_CODE));
+    assert.match(unfreeze, new RegExp(PROJECT_CODE));
+    assert.match(freeze, /row_count|returning/is);
+    assert.match(unfreeze, /row_count|returning/is);
 });
 
 test("finalize and SQL generation reject an empty or unsafe public URL", async () => {
@@ -776,7 +1022,17 @@ test("CLI arguments fail closed", () => {
         manifestPath: "x.json",
         dbVerified: false,
     });
+    for (const action of ["rollback-sql", "freeze-sql", "unfreeze-sql"]) {
+        assert.deepEqual(parseCliArgs(["--manifest", "x.json", `--${action}`]), {
+            action,
+            manifestPath: "x.json",
+            dbVerified: false,
+        });
+    }
     assert.match(HELP_TEXT, /--cleanup --db-verified/);
+    assert.match(HELP_TEXT, /--rollback-sql/);
+    assert.match(HELP_TEXT, /--freeze-sql/);
+    assert.match(HELP_TEXT, /--unfreeze-sql/);
     assert.match(HELP_TEXT, /run ID.*createdAt.*UTC/i);
     assert.match(HELP_TEXT, /verify.*expired.*cleanup.*expired/is);
     assert.deepEqual(parseCliArgs(["--help"]), { action: "help" });

@@ -46,4 +46,47 @@ test("manage sequence lookup excludes deleted rows and rejects a missing row", a
         source,
         /validateInvoiceProjectChange\(\s*updateData,\s*currentInvoice,?\s*\)[\s\S]*json\(res,\s*409/,
     );
+    assert.match(source, /invoiceUpdateRequiresReset/);
+    assert.match(
+        source,
+        /sequenceReset[\s\S]*code:\s*["']INVOICE_SEQUENCE_RESET["'][\s\S]*archiveRetained/s,
+    );
+});
+
+test("manage rejects ambiguous generated invoice IDs without using single or bulk updating", async () => {
+    const source = await readApi("manage.js");
+    const rejectStart = source.indexOf('if (action === "reject-invoices")');
+    const rejectBlock = source.slice(
+        rejectStart,
+        source.indexOf("const tableName = TABLE_MAP[tableKey]", rejectStart),
+    );
+
+    assert.doesNotMatch(
+        rejectBlock,
+        /\.eq\(['"]generated_invoice_id['"],\s*invoiceId\)[\s\S]*\.single\(\)/,
+    );
+    assert.match(
+        rejectBlock,
+        /\.eq\(['"]generated_invoice_id['"],\s*invoiceId\)[\s\S]*\.limit\(2\)/,
+    );
+    assert.match(rejectBlock, /invoices\.length\s*!==\s*1|ambiguous/i);
+    assert.match(rejectBlock, /\.eq\(['"]id['"],\s*invoice\.id\)/);
+});
+
+test("frontend warns after a successful sequence reset and exports only real archive paths", async () => {
+    const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+
+    assert.match(source, /json\.sequenceReset[\s\S]*alert\(/s);
+    assert.match(source, /result\.json\.sequenceReset[\s\S]*alert\(/s);
+
+    const exportBlock = source.slice(
+        source.indexOf("async function executeExport()"),
+        source.indexOf("function generateCSV"),
+    );
+    assert.match(exportBlock, /missing archived file path|missing archive/i);
+    assert.doesNotMatch(
+        exportBlock,
+        /generatedInvoiceId[\s\S]*bui_invoice\/projects\/\$\{projectCode\}/,
+    );
+    assert.doesNotMatch(exportBlock, /Fallback: Generate expected R2 path/i);
 });

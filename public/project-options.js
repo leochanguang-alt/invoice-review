@@ -3,6 +3,15 @@
         return value == null ? "" : String(value).trim();
     }
 
+    root.escapeProjectOptionHtml = function escapeProjectOptionHtml(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;");
+    };
+
     root.buildProjectOptions = function buildProjectOptions(
         projects,
         selectedCompanyId,

@@ -6,6 +6,36 @@ function json(res, status, body) {
     res.end(JSON.stringify(body));
 }
 
+export async function fetchAllExpenses(client, {
+    statusFilter = null,
+    pageSize = 1000,
+} = {}) {
+    if (!Number.isSafeInteger(pageSize) || pageSize <= 0) {
+        throw new Error("pageSize must be a positive integer");
+    }
+    const rows = [];
+    for (let from = 0; ; from += pageSize) {
+        let query = client
+            .from("invoices")
+            .select("*")
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false });
+        if (statusFilter) {
+            query = query.ilike("status", statusFilter);
+        }
+        const { data, error } = await query.range(from, from + pageSize - 1);
+        if (error) {
+            throw new Error(`Supabase invoice page ${from}-${from + pageSize - 1} failed: ${error.message}`);
+        }
+        if (!Array.isArray(data)) {
+            throw new Error(`Supabase invoice page ${from}-${from + pageSize - 1} returned invalid data`);
+        }
+        rows.push(...data);
+        if (data.length < pageSize) return rows;
+    }
+}
+
 export default async function handler(req, res) {
     try {
         if (!supabase) {
@@ -16,24 +46,7 @@ export default async function handler(req, res) {
         const url = new URL(req.url, `http://${req.headers.host}`);
         const statusFilter = url.searchParams.get('status');
 
-        // Build query — exclude soft-deleted rows so the UI never shows tombstones.
-        let query = supabase
-            .from('invoices')
-            .select('*')
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false });
-
-        // Apply status filter if provided
-        if (statusFilter) {
-            query = query.ilike('status', statusFilter);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-            console.error("Supabase Error:", error);
-            return json(res, 500, { success: false, message: error.message });
-        }
+        const data = await fetchAllExpenses(supabase, { statusFilter });
 
         if (!data || data.length === 0) {
             return json(res, 200, { success: true, data: [] });
@@ -54,6 +67,9 @@ export default async function handler(req, res) {
             "Charge to Project": item.charge_to_project || "",
             "Owner": item.owner_name || "",
             "Invoice ID": item.generated_invoice_id || "",
+            "generated_invoice_id": item.generated_invoice_id || "",
+            "achieved_file_id": item.achieved_file_id || "",
+            "achieved_file_link": item.achieved_file_link || "",
             "Location(City)": item.location_city || "",
             "Remarks": item.remarks || "",
 

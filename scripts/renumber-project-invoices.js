@@ -29,10 +29,15 @@ export const HELP_TEXT = `Usage:
   node scripts/renumber-project-invoices.js --manifest <path> --stage
   node scripts/renumber-project-invoices.js --manifest <path> --finalize
   node scripts/renumber-project-invoices.js --manifest <path> --verify
+  node scripts/renumber-project-invoices.js --manifest <path> --freeze-sql
+  node scripts/renumber-project-invoices.js --manifest <path> --unfreeze-sql
+  node scripts/renumber-project-invoices.js --manifest <path> --rollback-sql
   node scripts/renumber-project-invoices.js --manifest <path> --cleanup --db-verified
 
 Default project mode is dry-run. Cleanup requires both --cleanup and the
-explicit --db-verified confirmation after independent database verification.
+explicit --db-verified confirmation plus the script's own 35-row database check.
+Freeze, unfreeze, finalize, and rollback actions only print guarded SQL; they
+never execute it. Finalize SQL requires the project to already be archived.
 The run ID is derived from createdAt's UTC date. Verify accepts expired
 integrity-valid manifests, and cleanup accepts expired integrity-valid manifests;
 stage and finalize reject expired manifests.`;
@@ -63,6 +68,26 @@ export function manifestOutputPath(manifest) {
         OUTPUT_DIRECTORY,
         `${manifest.projectCode}-${manifest.runId}.json`,
     );
+}
+
+export async function writeManifestExclusive(
+    outputPath,
+    manifest,
+    writer = writeFile,
+) {
+    try {
+        await writer(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, {
+            flag: "wx",
+        });
+    } catch (error) {
+        if (error?.code === "EEXIST") {
+            throw new Error(
+                `manifest already exists; review and reuse it with --manifest ${outputPath}`,
+                { cause: error },
+            );
+        }
+        throw error;
+    }
 }
 
 function canonicalize(value) {
@@ -186,6 +211,9 @@ export function validateManifest(manifest, {
         "invoiceId",
         "newKey",
         "oldKey",
+        "oldAchievedFileLink",
+        "oldGeneratedInvoiceId",
+        "oldProjectSequence",
         "sequence",
         "sourceChecksumSHA256",
         "sourceETag",
@@ -222,6 +250,18 @@ export function validateManifest(manifest, {
         if (typeof row.currency !== "string"
             || !/^[A-Z]{3}$/.test(row.currency)) {
             throw new Error(`manifest row ${index + 1} has invalid currency`);
+        }
+        for (const property of ["oldGeneratedInvoiceId", "oldAchievedFileLink"]) {
+            if (!Object.hasOwn(row, property)
+                || (row[property] !== null && typeof row[property] !== "string")) {
+                throw new Error(`manifest row ${index + 1} has invalid ${property}`);
+            }
+        }
+        if (!Object.hasOwn(row, "oldProjectSequence")
+            || (row.oldProjectSequence !== null
+                && (!Number.isSafeInteger(row.oldProjectSequence)
+                    || row.oldProjectSequence <= 0))) {
+            throw new Error(`manifest row ${index + 1} has invalid oldProjectSequence`);
         }
         for (const property of requiredStrings) {
             requireNonEmpty(row[property], `manifest row ${index + 1} ${property}`);
@@ -353,6 +393,9 @@ export async function buildDryRunManifest({
             sequence: row.sequence,
             amount: Number(String(source.amount).replaceAll(",", "")),
             currency: String(source.currency || "").trim().toUpperCase(),
+            oldGeneratedInvoiceId: source.generated_invoice_id ?? null,
+            oldAchievedFileLink: source.achieved_file_link ?? null,
+            oldProjectSequence: source.project_sequence ?? null,
             oldKey: row.oldKey,
             generatedInvoiceId: row.generatedInvoiceId,
             newKey: row.newKey,
@@ -550,12 +593,14 @@ export async function cleanupManifest({
     r2Client,
     bucketName,
     dbVerified,
+    supabase,
 }) {
     if (dbVerified !== true) {
         throw new Error("explicit DB verification confirmation is required");
     }
     validateManifest(manifest, { allowExpired: true });
     await verifyFinalObjects({ manifest, r2Client, bucketName });
+    await verifyDatabaseState({ manifest, supabase });
 
     const rows = manifest.rows;
     const finalKeys = uniqueValues(rows, "newKey");
@@ -573,6 +618,43 @@ export async function cleanupManifest({
     return keysToDelete;
 }
 
+export async function verifyDatabaseState({ manifest, supabase }) {
+    validateManifest(manifest, { allowExpired: true });
+    if (!supabase || typeof supabase.from !== "function") {
+        throw new Error("database verification failed: Supabase client is required");
+    }
+    const invoiceIds = manifest.rows.map(row => row.invoiceId);
+    const { data, error } = await supabase
+        .from("invoices")
+        .select("id, project_sequence, generated_invoice_id, achieved_file_id")
+        .in("id", invoiceIds)
+        .eq("charge_to_project", manifest.projectCode)
+        .is("deleted_at", null);
+    if (error) {
+        throw new Error(`database verification failed: ${error.message}`);
+    }
+    if (!Array.isArray(data) || data.length !== EXPECTED_INVOICE_COUNT) {
+        throw new Error(
+            `database verification failed: expected exactly ${EXPECTED_INVOICE_COUNT} rows`,
+        );
+    }
+    const rowsById = new Map(data.map(row => [Number(row.id), row]));
+    for (const expected of manifest.rows) {
+        const actual = rowsById.get(expected.invoiceId);
+        for (const [column, value] of [
+            ["project_sequence", expected.sequence],
+            ["generated_invoice_id", expected.generatedInvoiceId],
+            ["achieved_file_id", expected.newKey],
+        ]) {
+            if (!actual || actual[column] !== value) {
+                throw new Error(
+                    `database verification failed for invoice ${expected.invoiceId}: ${column} mismatch`,
+                );
+            }
+        }
+    }
+}
+
 function sqlLiteral(value) {
     return `'${String(value).replaceAll("'", "''")}'`;
 }
@@ -580,6 +662,44 @@ function sqlLiteral(value) {
 function manifestValuesSql(manifest) {
     return manifest.rows.map(row => `    (${row.invoiceId}, ${row.sequence}, ${row.amount}, ${sqlLiteral(row.currency)}, ${sqlLiteral(row.generatedInvoiceId)}, ${sqlLiteral(row.oldKey)}, ${sqlLiteral(row.newKey)})`)
         .join(",\n");
+}
+
+function nullableSqlLiteral(value) {
+    return value === null ? "null" : sqlLiteral(value);
+}
+
+function rollbackManifestValuesSql(manifest, publicUrl) {
+    return manifest.rows.map(row => `    (${row.invoiceId}, ${row.sequence}, ${nullableSqlLiteral(row.oldProjectSequence)}, ${sqlLiteral(row.generatedInvoiceId)}, ${nullableSqlLiteral(row.oldGeneratedInvoiceId)}, ${sqlLiteral(row.oldKey)}, ${sqlLiteral(row.newKey)}, ${sqlLiteral(`${publicUrl}/${row.newKey}`)}, ${nullableSqlLiteral(row.oldAchievedFileLink)})`)
+        .join(",\n");
+}
+
+function projectArchiveSql(manifest, archived) {
+    validateManifest(manifest, { allowExpired: true });
+    const action = archived ? "freeze" : "unfreeze";
+    return `-- Review and execute manually; this script does not connect to Supabase.
+do $project_${action}$
+declare
+  changed_rows integer;
+begin
+  update public.projects
+  set archived = ${archived ? "true" : "false"}
+  where project_code = ${sqlLiteral(manifest.projectCode)}
+    and archived is ${archived ? "false" : "true"};
+  get diagnostics changed_rows = row_count;
+  if changed_rows <> 1 then
+    raise exception 'expected to ${action} exactly one active project, changed %', changed_rows;
+  end if;
+end
+$project_${action}$;
+`;
+}
+
+export function generateFreezeSql(manifest) {
+    return projectArchiveSql(manifest, true);
+}
+
+export function generateUnfreezeSql(manifest) {
+    return projectArchiveSql(manifest, false);
 }
 
 export function generateGuardedSql(manifest, { projectCode, publicUrl }) {
@@ -621,6 +741,15 @@ declare
   changed_rows integer;
   current_counter integer;
 begin
+  perform 1
+  from public.projects
+  where project_code = (select project_code from renumber_config)
+    and archived is true
+  for update;
+  if not found then
+    raise exception 'project must be archived before renumbering';
+  end if;
+
   perform 1
   from public.invoices
   where charge_to_project = (select project_code from renumber_config)
@@ -744,6 +873,112 @@ $renumber_update$;
 `;
 }
 
+export function generateRollbackSql(manifest, { projectCode, publicUrl }) {
+    validateManifest(manifest, { allowExpired: true });
+    if (projectCode !== manifest.projectCode) {
+        throw new Error("rollback projectCode does not match manifest");
+    }
+    const normalizedPublicUrl = normalizePublicUrl(publicUrl);
+    const values = rollbackManifestValuesSql(manifest, normalizedPublicUrl);
+    return `-- Review and execute this entire rollback manually in one transaction.
+create temporary table renumber_rollback_manifest (
+  invoice_id bigint primary key,
+  new_project_sequence integer not null,
+  old_project_sequence integer,
+  new_generated_invoice_id text not null,
+  old_generated_invoice_id text,
+  old_key text not null,
+  new_key text not null,
+  new_link text not null,
+  old_achieved_file_link text
+) on commit drop;
+
+insert into renumber_rollback_manifest values
+${values};
+
+lock table public.invoices in share row exclusive mode;
+
+do $renumber_rollback$
+declare
+  active_rows integer;
+  changed_rows integer;
+begin
+  perform 1 from public.projects
+  where project_code = ${sqlLiteral(projectCode)}
+    and archived is true
+  for update;
+  if not found then
+    raise exception 'project must remain archived during rollback';
+  end if;
+
+  select count(*) into active_rows
+  from public.invoices
+  where charge_to_project = ${sqlLiteral(projectCode)}
+    and deleted_at is null;
+  if active_rows <> 35 then
+    raise exception 'project must have exactly 35 active invoices, found %', active_rows;
+  end if;
+
+  if exists (
+    select 1
+    from renumber_rollback_manifest as m
+    left join public.invoices as i
+      on i.id = m.invoice_id
+      and i.charge_to_project = ${sqlLiteral(projectCode)}
+      and i.deleted_at is null
+    where i.id is null
+      or i.project_sequence is distinct from m.new_project_sequence
+      or i.generated_invoice_id is distinct from m.new_generated_invoice_id
+      or i.achieved_file_id is distinct from m.new_key
+      or i.achieved_file_link is distinct from m.new_link
+  ) then
+    raise exception 'current new invoice values do not match rollback manifest';
+  end if;
+
+  update public.invoices as i
+  set project_sequence = null,
+      updated_at = now()
+  from renumber_rollback_manifest as m
+  where i.id = m.invoice_id
+    and i.charge_to_project = ${sqlLiteral(projectCode)}
+    and i.deleted_at is null;
+  get diagnostics changed_rows = row_count;
+  if changed_rows <> 35 then
+    raise exception 'expected to clear exactly 35 sequences, cleared %', changed_rows;
+  end if;
+
+  update public.invoices as i
+  set project_sequence = m.old_project_sequence,
+      generated_invoice_id = m.old_generated_invoice_id,
+      achieved_file_id = m.old_key,
+      achieved_file_link = m.old_achieved_file_link,
+      updated_at = now()
+  from renumber_rollback_manifest as m
+  where i.id = m.invoice_id
+    and i.charge_to_project = ${sqlLiteral(projectCode)}
+    and i.deleted_at is null
+    and i.project_sequence is null;
+  get diagnostics changed_rows = row_count;
+  if changed_rows <> 35 then
+    raise exception 'expected to restore exactly 35 invoices, restored %', changed_rows;
+  end if;
+
+  update private.project_invoice_counters
+  set last_sequence = greatest(
+        private.project_invoice_counters.last_sequence,
+        35
+      ),
+      updated_at = now()
+  where project_code = ${sqlLiteral(projectCode)};
+  get diagnostics changed_rows = row_count;
+  if changed_rows <> 1 then
+    raise exception 'expected one existing project counter, updated %', changed_rows;
+  end if;
+end
+$renumber_rollback$;
+`;
+}
+
 function takeValue(argv, index, option) {
     const value = argv[index + 1];
     if (!value || value.startsWith("--")) {
@@ -771,7 +1006,15 @@ export function parseCliArgs(argv) {
             if (manifestPath !== undefined) throw new Error("duplicate --manifest");
             manifestPath = takeValue(argv, index, argument);
             index += 1;
-        } else if (["--stage", "--finalize", "--verify", "--cleanup"].includes(argument)) {
+        } else if ([
+            "--stage",
+            "--finalize",
+            "--verify",
+            "--cleanup",
+            "--freeze-sql",
+            "--unfreeze-sql",
+            "--rollback-sql",
+        ].includes(argument)) {
             actions.push(argument.slice(2));
         } else if (argument === "--db-verified") {
             if (dbVerified) throw new Error("duplicate --db-verified");
@@ -838,7 +1081,7 @@ async function queryInvoices(projectCode) {
     const supabase = createClient(process.env.SUPABASE_URL, key);
     const { data, error } = await supabase
         .from("invoices")
-        .select("id, invoice_date, amount, currency, achieved_file_id")
+        .select("id, invoice_date, amount, currency, project_sequence, generated_invoice_id, achieved_file_id, achieved_file_link")
         .eq("charge_to_project", projectCode)
         .is("deleted_at", null)
         .order("invoice_date", { ascending: true, nullsFirst: false })
@@ -854,6 +1097,22 @@ export async function main(argv = process.argv.slice(2)) {
         console.log(HELP_TEXT);
         return;
     }
+    if (["freeze-sql", "unfreeze-sql", "rollback-sql"].includes(options.action)) {
+        const manifest = await loadManifest(options.manifestPath, {
+            allowExpired: true,
+        });
+        if (options.action === "freeze-sql") {
+            console.log(generateFreezeSql(manifest));
+        } else if (options.action === "unfreeze-sql") {
+            console.log(generateUnfreezeSql(manifest));
+        } else {
+            console.log(generateRollbackSql(manifest, {
+                projectCode: manifest.projectCode,
+                publicUrl: process.env.R2_PUBLIC_URL,
+            }));
+        }
+        return;
+    }
     const r2Client = createR2Client();
     const bucketName = process.env.R2_BUCKET_NAME;
 
@@ -867,15 +1126,19 @@ export async function main(argv = process.argv.slice(2)) {
         });
         await mkdir(OUTPUT_DIRECTORY, { recursive: true });
         const outputPath = manifestOutputPath(manifest);
-        await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, {
-            flag: "wx",
-        });
+        await writeManifestExclusive(outputPath, manifest);
         console.log(outputPath);
         return;
     }
 
     const manifest = await loadManifest(options.manifestPath, {
-        allowExpired: ["verify", "cleanup"].includes(options.action),
+        allowExpired: [
+            "verify",
+            "cleanup",
+            "freeze-sql",
+            "unfreeze-sql",
+            "rollback-sql",
+        ].includes(options.action),
     });
     if (options.action === "stage") {
         await stageManifest({ manifest, r2Client, bucketName });
@@ -892,11 +1155,15 @@ export async function main(argv = process.argv.slice(2)) {
         await verifyFinalObjects({ manifest, r2Client, bucketName });
         console.log(`verified ${manifest.rows.length} final objects`);
     } else {
+        requireNonEmpty(process.env.SUPABASE_URL, "SUPABASE_URL");
+        const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+        requireNonEmpty(key, "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY");
         const deleted = await cleanupManifest({
             manifest,
             r2Client,
             bucketName,
             dbVerified: options.dbVerified,
+            supabase: createClient(process.env.SUPABASE_URL, key),
         });
         console.log(`deleted ${deleted.length} obsolete/staging objects`);
     }

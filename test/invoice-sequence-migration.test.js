@@ -185,3 +185,35 @@ test("migration rejects deleted invoices and updates the invoice timestamp", asy
         /grant select\s*\(\s*id\s*,\s*charge_to_project\s*,\s*project_sequence\s*,\s*generated_invoice_id\s*,\s*deleted_at\b/i,
     );
 });
+
+test("reservation rejects archived projects before returning or assigning a number", async () => {
+    const sql = await readFile(migrationUrl, "utf8");
+
+    assert.match(
+        sql,
+        /select[\s\S]*archived[\s\S]*from public\.projects[\s\S]*project_code\s*=\s*v_project_code/is,
+    );
+    assert.match(
+        sql,
+        /if\s+v_project_archived\s+is\s+true\s+then[\s\S]*raise exception 'project % is archived'/is,
+    );
+    assert.ok(
+        sql.search(/project % is archived/i)
+            < sql.search(/if\s+v_project_sequence\s+is\s+not\s+null/i),
+    );
+});
+
+test("reservation refuses a generated ID already used by another row in the project", async () => {
+    const sql = await readFile(migrationUrl, "utf8");
+    const generatedPosition = sql.search(/v_generated_invoice_id\s*:=/i);
+    const duplicateGuardPosition = sql.search(
+        /if exists\s*\([\s\S]*i\.id\s*<>\s*p_invoice_id[\s\S]*i\.generated_invoice_id\s*=\s*v_generated_invoice_id[\s\S]*raise exception/is,
+    );
+    const updatePosition = sql.search(
+        /update public\.invoices as i[\s\S]*set project_sequence\s*=\s*v_project_sequence/i,
+    );
+
+    assert.ok(generatedPosition >= 0);
+    assert.ok(duplicateGuardPosition > generatedPosition);
+    assert.ok(updatePosition > duplicateGuardPosition);
+});

@@ -10,11 +10,11 @@ async function loadProjectOptions() {
     );
     const context = {};
     vm.runInNewContext(source, context);
-    return context.buildProjectOptions;
+    return context;
 }
 
 test("appends an inactive current project and keeps it selected", async () => {
-    const buildProjectOptions = await loadProjectOptions();
+    const { buildProjectOptions } = await loadProjectOptions();
     const options = buildProjectOptions([
         { "Project Code": "ACTIVE", Company_ID: "C1", archived: false },
         { "Project Code": "OTHER", Company_ID: "C2", archived: false },
@@ -31,11 +31,30 @@ test("appends an inactive current project and keeps it selected", async () => {
 });
 
 test("preserves the current project even when no company is selected", async () => {
-    const buildProjectOptions = await loadProjectOptions();
+    const { buildProjectOptions } = await loadProjectOptions();
 
     assert.deepEqual(
         JSON.parse(JSON.stringify(buildProjectOptions([], "", "LEGACY"))),
         [{ value: "LEGACY", selected: true, inactiveCurrent: true }],
+    );
+});
+
+test("escapes project option values and labels before HTML interpolation", async () => {
+    const { escapeProjectOptionHtml } = await loadProjectOptions();
+    const malicious = `"><img src=x onerror=alert(1)>&'`;
+
+    assert.equal(
+        escapeProjectOptionHtml(malicious),
+        "&quot;&gt;&lt;img src=x onerror=alert(1)&gt;&amp;&#39;",
+    );
+
+    const appSource = await readFile(
+        new URL("../public/app.js", import.meta.url),
+        "utf8",
+    );
+    assert.match(
+        appSource,
+        /escapeProjectOptionHtml\(option\.value\)[\s\S]*<option value="\$\{escapedValue\}"/,
     );
 });
 
