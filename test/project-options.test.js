@@ -58,6 +58,36 @@ test("escapes project option values and labels before HTML interpolation", async
     );
 });
 
+test("builds CSV rows only for submitted invoices with persisted archive paths", async () => {
+    const { buildArchivedExportRows } = await loadProjectOptions();
+    const result = buildArchivedExportRows([
+        {
+            Status: "Submitted",
+            "Invoice Date": "2026-08-01",
+            Vender: "Archived",
+            achieved_file_id: "bui_invoice/projects/P/real.pdf",
+        },
+        {
+            Status: "Waiting for Confirm",
+            Vender: "In transit",
+            achieved_file_id: "bui_invoice/projects/P/not-final.pdf",
+        },
+        {
+            Status: "Submitted",
+            Vender: "Missing",
+            "Invoice ID": "P-0002-10EUR",
+        },
+    ]);
+
+    assert.equal(result.skippedCount, 2);
+    assert.equal(result.rows.length, 1);
+    assert.equal(
+        result.rows[0]["R2 File Path"],
+        "buiservice-assets/bui_invoice/projects/P/real.pdf",
+    );
+    assert.ok(!JSON.stringify(result).includes("P-0002-10EUR.pdf"));
+});
+
 test("review form uses the tested project option builder", async () => {
     const [appSource, htmlSource] = await Promise.all([
         readFile(new URL("../public/app.js", import.meta.url), "utf8"),

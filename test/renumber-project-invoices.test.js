@@ -7,6 +7,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 import {
+    assertProjectNumberingFrozen,
     buildDryRunManifest,
     calculateManifestDigest,
     cleanupManifest,
@@ -19,6 +20,7 @@ import {
     HELP_TEXT,
     manifestOutputPath,
     parseCliArgs,
+    prepareRollbackSql,
     stageManifest,
     validateManifest,
     verifyDatabaseState,
@@ -29,6 +31,7 @@ import {
 const PROJECT_CODE = "Neoss-MoEx-2608";
 const RUN_ID = "20260904";
 const CREATED_AT = "2026-09-04T20:00:00.000Z";
+const PUBLIC_URL = "https://assets.example";
 
 function makeInvoices() {
     return Array.from({ length: 35 }, (_, index) => {
@@ -48,7 +51,10 @@ function makeInvoices() {
     });
 }
 
-function makeManifest({ createdAt = CREATED_AT } = {}) {
+function makeManifest({
+    createdAt = CREATED_AT,
+    publicUrl = PUBLIC_URL,
+} = {}) {
     const runId = createdAt.slice(0, 10).replaceAll("-", "");
     const rows = makeInvoices()
         .sort((a, b) => a.invoice_date.localeCompare(b.invoice_date) || a.id - b.id)
@@ -76,6 +82,7 @@ function makeManifest({ createdAt = CREATED_AT } = {}) {
     return createManifestEnvelope({
         projectCode: PROJECT_CODE,
         createdAt,
+        publicUrl,
         rows,
     });
 }
@@ -95,6 +102,7 @@ function makeVerifiedSupabase(manifest) {
         project_sequence: row.sequence,
         generated_invoice_id: row.generatedInvoiceId,
         achieved_file_id: row.newKey,
+        achieved_file_link: `${manifest.publicUrl}/${row.newKey}`,
     }));
     return {
         from: () => ({
@@ -111,8 +119,9 @@ function makeVerifiedSupabase(manifest) {
 
 test("manifest envelope verifies metadata integrity and rejects stale or tampered content", () => {
     const manifest = makeManifest();
-    assert.equal(manifest.version, 1);
+    assert.equal(manifest.version, 2);
     assert.equal(manifest.projectCode, PROJECT_CODE);
+    assert.equal(manifest.publicUrl, PUBLIC_URL);
     assert.equal(manifest.runId, RUN_ID);
     assert.equal(manifest.createdAt, CREATED_AT);
     assert.match(manifest.contentDigest, /^sha256:[a-f0-9]{64}$/);
@@ -128,6 +137,14 @@ test("manifest envelope verifies metadata integrity and rejects stale or tampere
         () => validateManifest(manifest, { now: "2026-09-20T00:00:00.000Z" }),
         /expired/,
     );
+    const changedUrl = structuredClone(manifest);
+    changedUrl.publicUrl = "https://other.example";
+    assert.throws(() => validateManifest(changedUrl), /digest mismatch/);
+
+    const unsafeUrl = structuredClone(manifest);
+    unsafeUrl.publicUrl = "javascript:alert(1)";
+    resign(unsafeUrl);
+    assert.throws(() => validateManifest(unsafeUrl), /valid HTTP\(S\) URL/);
 });
 
 test("manifest preserves nullable pre-migration invoice values in its schema and digest", () => {
@@ -169,6 +186,7 @@ test("runId, staging prefix, and output filename derive from createdAt UTC date"
         },
         bucketName: "bucket",
         createdAt,
+        publicUrl: PUBLIC_URL,
     });
     assert.equal(manifest.runId, "20260903");
     assert.ok(manifest.rows.every(row =>
@@ -209,6 +227,7 @@ test("default dry-run builds exactly 35 ordered complete rows without R2 mutatio
         r2Client,
         bucketName: "bucket",
         createdAt: CREATED_AT,
+        publicUrl: PUBLIC_URL,
     });
 
     const rows = rowsOf(manifest);
@@ -239,6 +258,7 @@ test("dry-run rejects any row count other than 35 before touching R2", async () 
             r2Client: { async send() { calls += 1; } },
             bucketName: "bucket",
             createdAt: CREATED_AT,
+            publicUrl: PUBLIC_URL,
         }),
         /exactly 35 active invoices/,
     );
@@ -258,6 +278,7 @@ test("dry-run orders missing invoice dates last and preserves them in the manife
         },
         bucketName: "bucket",
         createdAt: CREATED_AT,
+        publicUrl: PUBLIC_URL,
     });
     assert.equal(manifest.rows.at(-1).invoiceDate, null);
     assert.equal(manifest.rows.at(-1).invoiceId, invoices[0].id);
@@ -779,6 +800,7 @@ test("cleanup independently verifies all 35 manifest rows in Supabase before any
         project_sequence: row.sequence,
         generated_invoice_id: row.generatedInvoiceId,
         achieved_file_id: row.newKey,
+        achieved_file_link: `${manifest.publicUrl}/${row.newKey}`,
     }));
     const supabase = {
         from(table) {
@@ -786,6 +808,7 @@ test("cleanup independently verifies all 35 manifest rows in Supabase before any
             return {
                 select(columns) {
                     assert.match(columns, /achieved_file_id/);
+                    assert.match(columns, /achieved_file_link/);
                     return {
                         in(column, ids) {
                             assert.equal(column, "id");
@@ -845,6 +868,7 @@ test("database verification fails closed on query errors, missing rows, and fiel
         project_sequence: row.sequence,
         generated_invoice_id: row.generatedInvoiceId,
         achieved_file_id: row.newKey,
+        achieved_file_link: `${manifest.publicUrl}/${row.newKey}`,
     }));
     const makeSupabase = result => ({
         from: () => ({
@@ -875,6 +899,14 @@ test("database verification fails closed on query errors, missing rows, and fiel
             supabase: makeSupabase({ data: null, error: { message: "db down" } }),
         }),
         /db down/,
+    );
+    rows[0].achieved_file_link = "https://wrong.example/file.pdf";
+    await assert.rejects(
+        verifyDatabaseState({
+            manifest,
+            supabase: makeSupabase({ data: rows, error: null }),
+        }),
+        /achieved_file_link mismatch/,
     );
 });
 
@@ -924,7 +956,7 @@ test("guarded SQL asserts all rows and old keys, updates archive fields, and set
     assert.match(sql, /on commit drop/i);
     assert.match(
         sql,
-        /from public\.projects[\s\S]*project_code[\s\S]*archived is true[\s\S]*raise exception/is,
+        /from public\.projects[\s\S]*project_code[\s\S]*numbering_frozen is true[\s\S]*raise exception/is,
     );
 });
 
@@ -936,7 +968,7 @@ test("rollback SQL guards current values, clears sequences first, restores old n
     });
 
     assert.match(sql, /exactly 35/i);
-    assert.match(sql, /archived is true/i);
+    assert.match(sql, /numbering_frozen is true/i);
     assert.match(sql, /i\.project_sequence is distinct from m\.new_project_sequence/i);
     assert.match(sql, /i\.generated_invoice_id is distinct from m\.new_generated_invoice_id/i);
     assert.match(sql, /i\.achieved_file_id is distinct from m\.new_key/i);
@@ -949,19 +981,101 @@ test("rollback SQL guards current values, clears sequences first, restores old n
     assert.match(sql, /achieved_file_link = m\.old_achieved_file_link/i);
     assert.match(sql, /last_sequence\s*=\s*greatest\([^)]*last_sequence[^)]*35/is);
     assert.doesNotMatch(sql, /last_sequence\s*=\s*(?:0|m\.old_project_sequence)/i);
+    assert.ok(sql.includes(manifest.publicUrl));
 });
 
-test("freeze and unfreeze SQL are explicit guarded commands and never execute automatically", () => {
+test("rollback SQL is emitted only after all old objects match manifest metadata", async () => {
     const manifest = makeManifest();
-    const freeze = generateFreezeSql(manifest);
-    const unfreeze = generateUnfreezeSql(manifest);
+    const commands = [];
+    const sql = await prepareRollbackSql({
+        manifest,
+        bucketName: "bucket",
+        r2Client: {
+            async send(command) {
+                commands.push(command);
+                const row = manifest.rows.find(item => item.oldKey === command.input.Key);
+                return {
+                    ContentLength: row.sourceSize,
+                    ETag: row.sourceETag,
+                    ChecksumSHA256: row.sourceChecksumSHA256,
+                };
+            },
+        },
+    });
+    assert.equal(commands.length, 35);
+    assert.ok(commands.every(command => command instanceof HeadObjectCommand));
+    assert.match(sql, /renumber_rollback_manifest/);
 
-    assert.match(freeze, /update public\.projects[\s\S]*set archived = true/is);
-    assert.match(unfreeze, /update public\.projects[\s\S]*set archived = false/is);
+    await assert.rejects(
+        prepareRollbackSql({
+            manifest,
+            bucketName: "bucket",
+            r2Client: {
+                async send(command) {
+                    if (command.input.Key === manifest.rows[7].oldKey) {
+                        const error = new Error("not found after cleanup");
+                        error.name = "NotFound";
+                        throw error;
+                    }
+                    const row = manifest.rows.find(item => item.oldKey === command.input.Key);
+                    return { ContentLength: row.sourceSize, ETag: row.sourceETag };
+                },
+            },
+        }),
+        /rollback old-object verification failed.*not found after cleanup/is,
+    );
+});
+
+test("freeze and unfreeze SQL use numbering_frozen without changing project archive status", () => {
+    const manifest = makeManifest();
+    const freeze = generateFreezeSql(PROJECT_CODE);
+    const unfreeze = generateUnfreezeSql(PROJECT_CODE);
+
+    assert.match(freeze, /update public\.projects[\s\S]*set numbering_frozen = true/is);
+    assert.match(unfreeze, /update public\.projects[\s\S]*set numbering_frozen = false/is);
+    assert.doesNotMatch(freeze, /set archived\s*=/i);
+    assert.doesNotMatch(unfreeze, /set archived\s*=/i);
     assert.match(freeze, new RegExp(PROJECT_CODE));
     assert.match(unfreeze, new RegExp(PROJECT_CODE));
     assert.match(freeze, /row_count|returning/is);
     assert.match(unfreeze, /row_count|returning/is);
+});
+
+test("dry-run project preflight requires numbering_frozen before invoice reads", async () => {
+    const makeSupabase = result => ({
+        from(table) {
+            assert.equal(table, "projects");
+            return {
+                select(columns) {
+                    assert.equal(columns, "project_code, numbering_frozen");
+                    return {
+                        eq(column, value) {
+                            assert.deepEqual([column, value], ["project_code", PROJECT_CODE]);
+                            return { maybeSingle: async () => result };
+                        },
+                    };
+                },
+            };
+        },
+    });
+
+    await assertProjectNumberingFrozen(
+        makeSupabase({
+            data: { project_code: PROJECT_CODE, numbering_frozen: true },
+            error: null,
+        }),
+        PROJECT_CODE,
+    );
+    await assert.rejects(
+        assertProjectNumberingFrozen(
+            makeSupabase({
+                data: { project_code: PROJECT_CODE, numbering_frozen: false },
+                error: null,
+            }),
+            PROJECT_CODE,
+        ),
+        /freeze.*before dry-run/i,
+    );
 });
 
 test("finalize and SQL generation reject an empty or unsafe public URL", async () => {
@@ -997,9 +1111,10 @@ test("finalize and SQL generation reject an empty or unsafe public URL", async (
 
 test("SQL keeps dollar-tag-like URL text outside procedural dollar quotes", () => {
     const marker = "$renumber_update$";
-    const sql = generateGuardedSql(makeManifest(), {
+    const publicUrl = `https://assets.example/${marker}`;
+    const sql = generateGuardedSql(makeManifest({ publicUrl }), {
         projectCode: PROJECT_CODE,
-        publicUrl: `https://assets.example/${marker}`,
+        publicUrl,
     });
     const opening = "do $renumber_update$\n";
     const bodyStart = sql.indexOf(opening) + opening.length;
@@ -1022,13 +1137,27 @@ test("CLI arguments fail closed", () => {
         manifestPath: "x.json",
         dbVerified: false,
     });
-    for (const action of ["rollback-sql", "freeze-sql", "unfreeze-sql"]) {
+    for (const action of ["rollback-sql", "unfreeze-sql"]) {
         assert.deepEqual(parseCliArgs(["--manifest", "x.json", `--${action}`]), {
             action,
             manifestPath: "x.json",
             dbVerified: false,
         });
     }
+    assert.deepEqual(parseCliArgs(["--project", PROJECT_CODE, "--freeze-sql"]), {
+        action: "freeze-sql",
+        projectCode: PROJECT_CODE,
+        dbVerified: false,
+    });
+    assert.deepEqual(parseCliArgs(["--project", PROJECT_CODE, "--unfreeze-sql"]), {
+        action: "unfreeze-sql",
+        projectCode: PROJECT_CODE,
+        dbVerified: false,
+    });
+    assert.throws(
+        () => parseCliArgs(["--manifest", "x.json", "--freeze-sql"]),
+        /--freeze-sql.*--project|--project.*freeze/i,
+    );
     assert.match(HELP_TEXT, /--cleanup --db-verified/);
     assert.match(HELP_TEXT, /--rollback-sql/);
     assert.match(HELP_TEXT, /--freeze-sql/);

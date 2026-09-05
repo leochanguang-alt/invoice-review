@@ -472,3 +472,101 @@ Assert:
 
 Run `npm test`, confirm `origin/main...main` is `0 0`, and report the migration
 manifest path, deployment commit, database counts, and export results.
+
+---
+
+## Final Safety Runbook (Supersedes Task 5/6 Ordering)
+
+No command in this section is run automatically by the migration tool. Review
+every generated SQL block and execute it manually in the approved environment.
+
+### 1. Freeze numbering first
+
+```bash
+node scripts/renumber-project-invoices.js \
+  --project Neoss-MoEx-2608 --freeze-sql
+```
+
+Execute the printed SQL and verify `projects.numbering_frozen = true`.
+`projects.archived` must remain unchanged so the active project stays
+exportable. Smoke-check that `reserve_invoice_number` now rejects this project.
+
+### 2. Dry-run and stage
+
+```bash
+node scripts/renumber-project-invoices.js --project Neoss-MoEx-2608
+node scripts/renumber-project-invoices.js --manifest <manifest> --stage
+```
+
+Review the versioned digest, fixed project/run, 35 rows, old database values,
+old object size/ETag/checksum, `publicUrl`, and all old/staging/final keys.
+Stage performs complete source preflight before any copy.
+
+### 3. Finalize R2
+
+```bash
+node scripts/renumber-project-invoices.js --manifest <manifest> --finalize \
+  > guarded-renumber.sql
+```
+
+Finalize verifies all staging objects before writing final keys. Every copy
+Heads its target first: an absent target may be copied; an existing target is
+accepted only when size, available checksum, and a 32-hex single-part content
+ETag match. Multipart ETags are not treated as content hashes.
+
+### 4. Apply guarded database SQL manually
+
+Review `guarded-renumber.sql`, then execute it as one transaction. It must
+assert `numbering_frozen = true`, exactly 35 active manifest rows, all old
+database values, contiguous sequences, counter bounds, and affected row counts.
+Do not unfreeze.
+
+### 5. Verify and smoke-test
+
+```bash
+node scripts/renumber-project-invoices.js --manifest <manifest> --verify
+```
+
+Independently query all 35 rows and verify sequence, generated ID,
+`achieved_file_id`, and `achieved_file_link`; verify no duplicate project
+sequences or generated IDs. Export a fresh ZIP and CSV. CSV may contain only
+submitted invoices with persisted achieved paths and must report the count of
+in-transit/missing-path rows skipped.
+
+Run reservation smoke tests in a separate non-production project: first
+reservation, retry idempotence, and collision skip-to-next behavior. Confirm the
+frozen Neoss project still rejects reservation.
+
+### 6. Roll back if needed (only before cleanup)
+
+```bash
+node scripts/renumber-project-invoices.js --manifest <manifest> --rollback-sql \
+  > guarded-rollback.sql
+```
+
+The command Heads all 35 old keys and verifies manifest metadata before it
+prints SQL. Missing or changed old objects fail closed. Review and execute the
+SQL manually; it guards current new values, clears all sequences first,
+restores old nullable fields, and never lowers the counter. Re-run step 5 after
+rollback. Cleanup permanently closes this rollback window.
+
+### 7. Cleanup only after accepting loss of rollback
+
+```bash
+node scripts/renumber-project-invoices.js \
+  --manifest <manifest> --cleanup --db-verified
+```
+
+Cleanup independently re-queries all 35 database rows and Heads all final
+objects before any Delete. Do not run it while rollback may still be needed.
+
+### 8. Unfreeze last
+
+```bash
+node scripts/renumber-project-invoices.js \
+  --manifest <manifest> --unfreeze-sql
+# or: --project Neoss-MoEx-2608 --unfreeze-sql
+```
+
+Execute the printed SQL, verify `numbering_frozen = false`, then perform one
+final normal reservation smoke test. The project remains active throughout.

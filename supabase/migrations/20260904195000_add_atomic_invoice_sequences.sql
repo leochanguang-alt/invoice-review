@@ -3,6 +3,9 @@ create schema if not exists private;
 alter table public.invoices
   add column if not exists project_sequence integer;
 
+alter table public.projects
+  add column if not exists numbering_frozen boolean not null default false;
+
 do $$
 begin
   if not exists (
@@ -50,10 +53,13 @@ declare
   v_generated_invoice_id text;
   v_invoice_project_code text;
   v_deleted_at timestamptz;
-  v_project_archived boolean;
+  v_numbering_frozen boolean;
   v_ignore_stale_number boolean := false;
   v_rounded_amount numeric;
   v_amount_part text;
+  v_attempts integer := 0;
+  v_max_attempts constant integer := 1000;
+  v_number_available boolean := false;
 begin
   v_project_code := btrim(p_project_code);
 
@@ -62,18 +68,19 @@ begin
       using errcode = '22023';
   end if;
 
-  select p.archived
-  into v_project_archived
+  select p.numbering_frozen
+  into v_numbering_frozen
   from public.projects as p
-  where p.project_code = v_project_code;
+  where p.project_code = v_project_code
+  for share;
 
   if not found then
     raise exception 'project % not found', v_project_code
       using errcode = 'P0002';
   end if;
 
-  if v_project_archived is true then
-    raise exception 'project % is archived', v_project_code
+  if v_numbering_frozen is true then
+    raise exception 'invoice numbering for project % is frozen', v_project_code
       using errcode = '55000';
   end if;
 
@@ -203,20 +210,6 @@ begin
   where i.charge_to_project = v_project_code
   on conflict (project_code) do nothing;
 
-  update private.project_invoice_counters
-  set last_sequence = greatest(
-        last_sequence,
-        coalesce(v_project_sequence, 0)
-      ) + 1,
-      updated_at = now()
-  where project_code = v_project_code
-  returning last_sequence into v_project_sequence;
-
-  if v_project_sequence is null then
-    raise exception 'could not reserve an invoice number for project %',
-      v_project_code;
-  end if;
-
   v_rounded_amount := floor(coalesce(p_amount, 0) + 0.5);
 
   v_amount_part := case
@@ -225,24 +218,46 @@ begin
     else v_rounded_amount::text
   end;
 
-  v_generated_invoice_id :=
-    v_project_code
-    || '-'
-    || lpad(v_project_sequence::text, 4, '0')
-    || '-'
-    || v_amount_part
-    || upper(btrim(coalesce(p_currency, '')));
+  while v_attempts < v_max_attempts loop
+    v_attempts := v_attempts + 1;
 
-  if exists (
-    select 1
-    from public.invoices as i
-    where i.charge_to_project = v_project_code
-      and i.id <> p_invoice_id
-      and i.generated_invoice_id = v_generated_invoice_id
-  ) then
-    raise exception 'generated invoice ID % already exists in project %',
-      v_generated_invoice_id, v_project_code
-      using errcode = '23505';
+    update private.project_invoice_counters
+    set last_sequence = greatest(
+          last_sequence,
+          coalesce(v_project_sequence, 0)
+        ) + 1,
+        updated_at = now()
+    where project_code = v_project_code
+    returning last_sequence into v_project_sequence;
+
+    if v_project_sequence is null then
+      raise exception 'could not reserve an invoice number for project %',
+        v_project_code;
+    end if;
+
+    v_generated_invoice_id :=
+      v_project_code
+      || '-'
+      || lpad(v_project_sequence::text, 4, '0')
+      || '-'
+      || v_amount_part
+      || upper(btrim(coalesce(p_currency, '')));
+
+    if not exists (
+      select 1
+      from public.invoices as i
+      where i.charge_to_project = v_project_code
+        and i.id <> p_invoice_id
+        and i.generated_invoice_id = v_generated_invoice_id
+    ) then
+      v_number_available := true;
+      exit;
+    end if;
+  end loop;
+
+  if not v_number_available then
+    raise exception 'could not find an unused invoice number after % attempts',
+      v_max_attempts;
   end if;
 
   update public.invoices as i
@@ -278,7 +293,7 @@ grant select (
   on table public.invoices to anon, authenticated, service_role;
 grant update (project_sequence, generated_invoice_id, updated_at)
   on table public.invoices to anon, authenticated, service_role;
-grant select (project_code, archived)
+grant select (project_code, numbering_frozen)
   on table public.projects to anon, authenticated, service_role;
 grant execute on function public.reserve_invoice_number(bigint, text, numeric, text)
   to anon, authenticated;

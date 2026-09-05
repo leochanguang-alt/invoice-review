@@ -83,7 +83,9 @@ test("frontend warns after a successful sequence reset and exports only real arc
         source.indexOf("async function executeExport()"),
         source.indexOf("function generateCSV"),
     );
-    assert.match(exportBlock, /missing archived file path|missing archive/i);
+    assert.match(exportBlock, /buildArchivedExportRows/);
+    assert.match(exportBlock, /skippedCount[\s\S]*alert\(/s);
+    assert.doesNotMatch(exportBlock, /Cannot export:.*missing archived file paths/);
     assert.doesNotMatch(
         exportBlock,
         /generatedInvoiceId[\s\S]*bui_invoice\/projects\/\$\{projectCode\}/,

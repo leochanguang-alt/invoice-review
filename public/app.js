@@ -2563,36 +2563,15 @@ async function executeExport() {
         progressStatus.textContent = 'Generating Excel file...';
         progressFill.style.width = '40%';
 
-        const archivePathFor = (inv) => {
-            const achievedFileId = inv['achieved_file_id'] || '';
-            const achievedFileLink = inv['achieved_file_link'] || '';
-            if (achievedFileId.startsWith('bui_invoice/')) {
-                return `buiservice-assets/${achievedFileId}`;
-            }
-            if (achievedFileId.includes('/')) {
-                return achievedFileId;
-            }
-            const pathMatch = achievedFileLink.match(/(bui_invoice\/projects\/[^?]+)/);
-            return pathMatch ? `buiservice-assets/${pathMatch[1]}` : '';
-        };
-        const missingArchives = projectInvoices.filter(inv => !archivePathFor(inv));
-        if (missingArchives.length > 0) {
-            throw new Error(
-                `Cannot export: ${missingArchives.length} invoice(s) are missing archived file paths.`
+        const {
+            rows: excelData,
+            skippedCount,
+        } = buildArchivedExportRows(projectInvoices);
+        if (skippedCount > 0) {
+            alert(
+                `${skippedCount} invoice(s) are still in transit or missing a persisted archive path and were skipped.`
             );
         }
-
-        // Prepare Excel data using only persisted archive paths.
-        const excelData = projectInvoices.map(inv => {
-            return {
-                'Date': inv['Invoice Date'] || inv['invoice_date'] || '',
-                'Vendor': inv['Vender'] || inv['Vendor'] || inv['vendor'] || '',
-                'Original Amount': `${inv['Amount'] || ''} ${inv['Currency'] || ''}`.trim(),
-                'Category': inv['Category'] || inv['category'] || '',
-                'Owner': inv['Owner'] || inv['owner'] || '',
-                'R2 File Path': archivePathFor(inv)
-            };
-        });
 
         // Generate Excel using simple CSV format (can be opened in Excel)
         const csvContent = generateCSV(excelData);

@@ -186,34 +186,46 @@ test("migration rejects deleted invoices and updates the invoice timestamp", asy
     );
 });
 
-test("reservation rejects archived projects before returning or assigning a number", async () => {
+test("reservation locks and rejects numbering-frozen projects without changing archive status", async () => {
     const sql = await readFile(migrationUrl, "utf8");
 
     assert.match(
         sql,
-        /select[\s\S]*archived[\s\S]*from public\.projects[\s\S]*project_code\s*=\s*v_project_code/is,
+        /alter table public\.projects[\s\S]*add column if not exists numbering_frozen boolean not null default false/is,
     );
     assert.match(
         sql,
-        /if\s+v_project_archived\s+is\s+true\s+then[\s\S]*raise exception 'project % is archived'/is,
+        /select\s+p\.numbering_frozen[\s\S]*from public\.projects as p[\s\S]*project_code\s*=\s*v_project_code[\s\S]*for share/is,
     );
+    assert.match(
+        sql,
+        /if\s+v_numbering_frozen\s+is\s+true\s+then[\s\S]*raise exception 'invoice numbering for project % is frozen'/is,
+    );
+    assert.doesNotMatch(sql, /select\s+p\.archived[\s\S]*into\s+v_project_archived/is);
     assert.ok(
-        sql.search(/project % is archived/i)
+        sql.search(/numbering for project % is frozen/i)
             < sql.search(/if\s+v_project_sequence\s+is\s+not\s+null/i),
     );
 });
 
-test("reservation refuses a generated ID already used by another row in the project", async () => {
+test("reservation advances the counter until it finds an unused generated ID", async () => {
     const sql = await readFile(migrationUrl, "utf8");
-    const generatedPosition = sql.search(/v_generated_invoice_id\s*:=/i);
-    const duplicateGuardPosition = sql.search(
-        /if exists\s*\([\s\S]*i\.id\s*<>\s*p_invoice_id[\s\S]*i\.generated_invoice_id\s*=\s*v_generated_invoice_id[\s\S]*raise exception/is,
+    assert.match(sql, /v_max_attempts\s+constant integer\s*:=\s*[1-9][0-9]*/i);
+    assert.match(
+        sql,
+        /while\s+v_attempts\s*<\s*v_max_attempts\s+loop[\s\S]*update private\.project_invoice_counters[\s\S]*returning last_sequence into v_project_sequence/is,
     );
-    const updatePosition = sql.search(
-        /update public\.invoices as i[\s\S]*set project_sequence\s*=\s*v_project_sequence/i,
+    assert.match(
+        sql,
+        /if not exists\s*\([\s\S]*i\.id\s*<>\s*p_invoice_id[\s\S]*i\.generated_invoice_id\s*=\s*v_generated_invoice_id[\s\S]*exit/is,
     );
-
-    assert.ok(generatedPosition >= 0);
-    assert.ok(duplicateGuardPosition > generatedPosition);
-    assert.ok(updatePosition > duplicateGuardPosition);
+    assert.match(
+        sql,
+        /v_attempts\s*:=\s*v_attempts\s*\+\s*1[\s\S]*end loop/is,
+    );
+    assert.match(sql, /could not find an unused invoice number.*attempts/is);
+    assert.doesNotMatch(
+        sql,
+        /generated invoice ID % already exists[\s\S]*using errcode = '23505'/is,
+    );
 });

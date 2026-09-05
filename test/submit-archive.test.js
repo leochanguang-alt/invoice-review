@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CopyObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 
-import { copyAndVerifyArchive } from "../lib/invoice-archive.js";
+import {
+    copyAndVerifyArchive,
+    isSinglePartContentETag,
+} from "../lib/invoice-archive.js";
+
+test("recognizes only unquoted 32-hex single-part content ETags", () => {
+    assert.equal(isSinglePartContentETag("0123456789abcdef0123456789abcdef"), true);
+    assert.equal(isSinglePartContentETag("0123456789abcdef0123456789abcde-2"), false);
+    assert.equal(isSinglePartContentETag("opaque-etag"), false);
+});
 
 test("copies an archive and verifies the target before returning its metadata", async () => {
     const commands = [];
@@ -123,6 +132,73 @@ test("refuses to overwrite an existing target with different metadata", async ()
         /refusing to overwrite.*metadata mismatch/i,
     );
     assert.equal(commands.filter(command => command instanceof CopyObjectCommand).length, 0);
+});
+
+test("ignores multipart ETag differences while still enforcing size and checksum", async () => {
+    const commands = [];
+    const r2 = {
+        async send(command) {
+            commands.push(command);
+            return commands.length === 1
+                ? { ContentLength: 123, ETag: '"source-multipart-2"' }
+                : { ContentLength: 123, ETag: '"target-multipart-2"' };
+        },
+    };
+    await copyAndVerifyArchive(r2, {
+        bucketName: "bucket",
+        publicUrl: "https://files.example",
+        originalKey: "original/a.pdf",
+        targetKey: "projects/P/a.pdf",
+    });
+    assert.equal(commands.filter(command => command instanceof CopyObjectCommand).length, 0);
+
+    const checksumR2 = {
+        async send(command) {
+            return command.input.Key === "original/a.pdf"
+                ? {
+                    ContentLength: 123,
+                    ETag: '"source-multipart-2"',
+                    ChecksumSHA256: "source-sum",
+                }
+                : {
+                    ContentLength: 123,
+                    ETag: '"target-multipart-2"',
+                    ChecksumSHA256: "target-sum",
+                };
+        },
+    };
+    await assert.rejects(
+        copyAndVerifyArchive(checksumR2, {
+            bucketName: "bucket",
+            publicUrl: "https://files.example",
+            originalKey: "original/a.pdf",
+            targetKey: "projects/P/a.pdf",
+        }),
+        /checksum mismatch/i,
+    );
+});
+
+test("still rejects a different single-part content ETag without checksum", async () => {
+    let calls = 0;
+    await assert.rejects(
+        copyAndVerifyArchive({
+            async send() {
+                calls += 1;
+                return {
+                    ContentLength: 123,
+                    ETag: calls === 1
+                        ? '"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
+                        : '"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"',
+                };
+            },
+        }, {
+            bucketName: "bucket",
+            publicUrl: "https://files.example",
+            originalKey: "original/a.pdf",
+            targetKey: "projects/P/a.pdf",
+        }),
+        /ETag mismatch/i,
+    );
 });
 
 test("rejects a missing or empty source before copying", async () => {
