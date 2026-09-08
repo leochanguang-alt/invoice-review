@@ -1,4 +1,5 @@
 import { supabase } from "../lib/_supabase.js";
+import { annotateDuplicates } from "../lib/invoice-duplicates.js";
 
 function json(res, status, body) {
     res.statusCode = status;
@@ -79,6 +80,7 @@ export default async function handler(req, res) {
             "Vender": item.vendor || "",
             "Amount": item.amount != null ? String(item.amount) : "",
             "Currency": item.currency || "",
+            "Invoice Number": item.invoice_number || "",
             "Amount(HKD)": item.amount_hkd != null ? String(item.amount_hkd) : "",
             "Country": item.country || "",
             "Category": item.category || "",
@@ -106,9 +108,16 @@ export default async function handler(req, res) {
             "_supabaseId": item.id
         }));
 
+        let annotated = result;
+        try {
+            annotated = annotateDuplicates(result);
+        } catch (annotateError) {
+            console.error("Duplicate annotation failed:", annotateError);
+        }
+
         return json(res, 200, {
             success: true,
-            data: result
+            data: annotated
         });
     } catch (e) {
         console.error("API Error:", e);

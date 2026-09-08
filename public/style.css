@@ -860,6 +860,33 @@ tr:hover td {
   background: #94a3b8;
 }
 
+.review-row.duplicate {
+  box-shadow: inset 3px 0 0 #d97706;
+}
+
+.duplicate-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.duplicate-warning {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius);
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .review-record-item {
   display: flex;
   align-items: center;

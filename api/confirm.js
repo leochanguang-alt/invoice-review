@@ -1,4 +1,5 @@
 import { supabase } from "../lib/_supabase.js";
+import { resolveAmountHkd } from "../lib/currency-hkd.js";
 import {
   applyInvoiceSequenceInvariant,
   invoiceUpdateRequiresReset,
@@ -10,31 +11,6 @@ function json(res, status, body) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(body));
-}
-
-// Look up the exchange rate for a currency on the 1st of the invoice's month
-async function lookupRate(currency, invoiceDate) {
-  if (!currency || !invoiceDate) return null;
-  if (currency.toUpperCase() === 'HKD') return 1;
-
-  const date = new Date(invoiceDate);
-  if (isNaN(date.getTime())) return null;
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  // For 2025 invoices use 2025-01-01; for later years use 1st of that month
-  const targetDate = year === 2025 ? '2025-01-01' : `${year}-${month}-01`;
-
-  const { data, error } = await supabase
-    .from('currency_rates')
-    .select('rate_to_hkd')
-    .eq('currency_code', currency.toUpperCase())
-    .eq('rate_date', targetDate)
-    .limit(1)
-    .single();
-
-  if (error || !data) return null;
-  return parseFloat(data.rate_to_hkd);
 }
 
 export default async function handler(req, res) {
@@ -101,18 +77,10 @@ export default async function handler(req, res) {
       updates = applyInvoiceSequenceInvariant(updates, invoice);
     }
 
-    // Auto-calculate amount_hkd if it's missing
-    if (invoice && (invoice.amount_hkd == null || invoice.amount_hkd === 0)) {
-      const amount = parseFloat(invoice.amount);
-      if (!isNaN(amount) && invoice.currency) {
-        const rate = await lookupRate(invoice.currency, invoice.invoice_date);
-        if (rate !== null) {
-          updates.amount_hkd = parseFloat((amount * rate).toFixed(2));
-          console.log(`[CONFIRM] Auto-calculated amount_hkd: ${amount} ${invoice.currency} * ${rate} = ${updates.amount_hkd} HKD`);
-        } else {
-          console.warn(`[CONFIRM] No exchange rate found for ${invoice.currency} on invoice date ${invoice.invoice_date}`);
-        }
-      }
+    const amountHkd = await resolveAmountHkd(supabase, invoice);
+    if (amountHkd != null) {
+      updates.amount_hkd = amountHkd;
+      console.log(`[CONFIRM] Auto-calculated amount_hkd: ${invoice.amount} ${invoice.currency} = ${amountHkd} HKD`);
     }
 
     // Update Supabase record

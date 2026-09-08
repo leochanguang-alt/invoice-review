@@ -7,6 +7,7 @@ import {
     buildSubmitMessage,
     requireSingleSubmittedUpdate,
 } from "../lib/invoice-submission.js";
+import { resolveAmountHkd } from "../lib/currency-hkd.js";
 
 // R2 Configuration
 const r2 = new S3Client({
@@ -64,13 +65,15 @@ export default async function handler(req, res) {
             // (also fills fileId if request omitted it). Skip soft-deleted rows.
             let dbR2Link = "";
             let isSoftDeleted = false;
+            let dbInvoice = null;
             try {
                 const { data: recData } = await supabase
                     .from('invoices')
-                    .select('file_id, file_link, file_link_r2, deleted_at')
+                    .select('file_id, file_link, file_link_r2, deleted_at, amount, currency, invoice_date, amount_hkd')
                     .eq('id', recordId)
                     .single();
                 if (recData) {
+                    dbInvoice = recData;
                     if (recData.deleted_at) {
                         isSoftDeleted = true;
                     } else {
@@ -212,6 +215,11 @@ export default async function handler(req, res) {
                 achieved_file_id: archivedFileId,
                 updated_at: new Date().toISOString()
             };
+            const amountHkd = await resolveAmountHkd(supabase, dbInvoice);
+            if (amountHkd != null) {
+                updateData.amount_hkd = amountHkd;
+                console.log(`[SUBMIT] Auto-calculated amount_hkd for ${recordId}: ${amountHkd}`);
+            }
 
             const updateResult = await supabase
                 .from('invoices')
