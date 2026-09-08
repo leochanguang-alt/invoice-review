@@ -274,12 +274,22 @@ function showLogin() {
 function setupNavigation() {
     navItems.forEach(item => {
         item.addEventListener('click', () => {
+            const page = item.getAttribute('data-page');
+            const reviewArea = document.getElementById('invoice-review-area');
+            const leavingReview = reviewArea && reviewArea.style.display !== 'none' && page !== 'invoice';
+            if (leavingReview && reviewedRows.size > 0) {
+                const stay = !confirm(
+                    `You have ${reviewedRows.size} reviewed invoice(s) that have not been submitted. Leave anyway?`
+                );
+                if (stay) return;
+                reviewedRows.clear();
+            }
+
             // Update active states
             navItems.forEach(i => i.classList.remove('active'));
             item.classList.add('active');
 
             // Update title
-            const page = item.getAttribute('data-page');
             pageTitle.innerText = PAGES[page];
 
             // Hide all content areas first
@@ -1282,9 +1292,7 @@ async function fixMissingFolders() {
 
 let reviewRecords = [];
 let reviewedRows = new Set();
-let submitSelectedRows = new Set(); // For submit tab checkbox selection
 let selectedRecordRow = null;
-let currentReviewTab = 'review';
 let projectsList = [];
 let ratesList = [];
 
@@ -1301,7 +1309,7 @@ const EDITABLE_FIELDS = ['Charge to Company', 'Charge to Project'];
 
 async function showInvoiceReviewPage() {
     document.getElementById('invoice-review-area').style.display = 'block';
-    setupReviewTabs();
+    setupReviewActions();
     await loadRatesList();
     await loadProjectsList();
     await loadReviewRecords();
@@ -1319,81 +1327,25 @@ async function loadRatesList() {
     }
 }
 
-function setupReviewTabs() {
-    document.querySelectorAll('.review-tab').forEach(tab => {
-        tab.onclick = () => {
-            // Check if leaving review tab with reviewed items
-            if (currentReviewTab === 'review' && reviewedRows.size > 0) {
-                showConfirmModal();
-                return;
-            }
-            switchReviewTab(tab.dataset.tab);
-        };
-    });
-
-    // Confirm modal buttons
-    document.getElementById('confirm-yes').onclick = confirmReviewedInvoices;
-    document.getElementById('confirm-no').onclick = () => {
-        document.getElementById('confirm-modal').style.display = 'none';
-        reviewedRows.clear();
-        renderReviewRecords();
-    };
-
-    // Submit button event listener
+function setupReviewActions() {
     const submitBtn = document.getElementById('submit-selected-btn');
     if (submitBtn) {
-        submitBtn.onclick = submitSelectedRecords;
+        submitBtn.onclick = submitReviewedRecords;
     }
 
-    // Select All / Deselect All buttons (work on all tabs)
     const selectAllBtn = document.getElementById('select-all-btn');
     const deselectAllBtn = document.getElementById('deselect-all-btn');
     if (selectAllBtn) selectAllBtn.onclick = () => selectAllRows(true);
     if (deselectAllBtn) deselectAllBtn.onclick = () => selectAllRows(false);
 }
 
-// Select-all / deselect-all helper. Operates on the active tab's selection set:
-// - Submit tab: submitSelectedRows
-// - Review/Modify tabs: reviewedRows
 function selectAllRows(select) {
-    const targetSet = currentReviewTab === 'submit' ? submitSelectedRows : reviewedRows;
     if (select) {
-        reviewRecords.forEach(r => targetSet.add(r._rowNumber));
+        reviewRecords.forEach(r => reviewedRows.add(r._rowNumber));
     } else {
-        targetSet.clear();
+        reviewedRows.clear();
     }
     renderReviewRecords();
-}
-
-function switchReviewTab(tabName) {
-    currentReviewTab = tabName;
-    document.querySelectorAll('.review-tab').forEach(t => {
-        t.classList.toggle('active', t.dataset.tab === tabName);
-    });
-
-    // Clear selections when switching tabs
-    submitSelectedRows.clear();
-    reviewedRows.clear();
-    selectedRecordRow = null;
-
-    // Show/hide right panel based on tab
-    const rightPanel = document.querySelector('.review-right-panel');
-    const leftPanel = document.querySelector('.review-left-panel');
-    const submitBtn = document.getElementById('submit-selected-btn');
-
-    if (tabName === 'submit') {
-        // Hide right panel for submit tab
-        if (rightPanel) rightPanel.style.display = 'none';
-        if (leftPanel) leftPanel.style.flex = '1';
-        if (submitBtn) submitBtn.style.display = '';
-    } else {
-        // Show right panel for other tabs
-        if (rightPanel) rightPanel.style.display = 'flex';
-        if (leftPanel) leftPanel.style.flex = '';
-        if (submitBtn) submitBtn.style.display = 'none';
-    }
-
-    loadReviewRecords();
 }
 
 async function loadProjectsList() {
@@ -1417,27 +1369,7 @@ async function loadReviewRecords() {
         const json = await res.json();
 
         if (json.success && json.data) {
-            // Filter by status based on current tab
-            let filteredRecords;
-            if (currentReviewTab === 'review') {
-                // Review tab: show Waiting for Confirm
-                filteredRecords = json.data.filter(r =>
-                    (r['Status'] || '').toLowerCase().includes('waiting')
-                );
-            } else if (currentReviewTab === 'submit') {
-                // Submit tab: show only Confirmed (not Submitted, not Waiting)
-                filteredRecords = json.data.filter(r => {
-                    const status = (r['Status'] || '').toLowerCase().trim();
-                    return status === 'confirmed';
-                });
-            } else {
-                // Modify tab: show Confirmed
-                filteredRecords = json.data.filter(r => {
-                    const status = (r['Status'] || '').toLowerCase().trim();
-                    return status === 'confirmed';
-                });
-            }
-            reviewRecords = filteredRecords;
+            reviewRecords = json.data.filter(r => isReviewableStatus(r['Status'] || r.Status));
             document.getElementById('review-record-count').textContent = `${reviewRecords.length} records`;
             renderReviewRecords();
         } else {
@@ -1453,49 +1385,20 @@ function renderReviewRecords() {
     const headerEl = document.getElementById('review-table-header');
     const bodyEl = document.getElementById('review-table-body');
 
-    // Define columns based on current tab
-    let DISPLAY_COLUMNS;
-    if (currentReviewTab === 'submit') {
-        // Submit tab: no Status, add Project and Company
-        DISPLAY_COLUMNS = [
-            { key: 'Invoice Date', label: 'Invoice Date' },
-            { key: 'Vender', label: 'Vendor' },
-            { key: 'Amount', label: 'Amount' },
-            { key: 'Currency', label: 'Currency' },
-            { key: 'Amount(HKD)', label: 'Amount(HKD)' },
-            { key: 'Country', label: 'Country' },
-            { key: 'Category', label: 'Category' },
-            { key: 'Owner', label: 'Owner' },
-            { key: 'Charge to Project', label: 'Project' },
-            { key: 'Charge to Company', label: 'Company' },
-            { key: 'Remarks', label: 'Remarks' }
-        ];
-    } else {
-        // Review/Modify tabs: original columns with Status
-        DISPLAY_COLUMNS = [
-            { key: 'Invoice Date', label: 'Invoice Date' },
-            { key: 'Vender', label: 'Vendor' },
-            { key: 'Amount', label: 'Amount' },
-            { key: 'Currency', label: 'Currency' },
-            { key: 'Amount(HKD)', label: 'Amount(HKD)' },
-            { key: 'Country', label: 'Country' },
-            { key: 'Category', label: 'Category' },
-            { key: 'Status', label: 'Status' },
-            { key: 'Owner', label: 'Owner' },
-            { key: 'Remarks', label: 'Remarks' }
-        ];
-    }
+    const DISPLAY_COLUMNS = [
+        { key: 'Invoice Date', label: 'Invoice Date' },
+        { key: 'Vender', label: 'Vendor' },
+        { key: 'Amount', label: 'Amount' },
+        { key: 'Currency', label: 'Currency' },
+        { key: 'Amount(HKD)', label: 'Amount(HKD)' },
+        { key: 'Country', label: 'Country' },
+        { key: 'Category', label: 'Category' },
+        { key: 'Status', label: 'Status' },
+        { key: 'Owner', label: 'Owner' },
+        { key: 'Remarks', label: 'Remarks' }
+    ];
 
-    // Render header
-    if (currentReviewTab === 'submit') {
-        // Submit tab: checkbox with select all
-        const allSelected = reviewRecords.length > 0 && reviewRecords.every(r => submitSelectedRows.has(r._rowNumber));
-        headerEl.innerHTML = `<th><input type="checkbox" id="select-all-checkbox" ${allSelected ? 'checked' : ''} onchange="toggleSubmitSelectAll()" /></th>` +
-            DISPLAY_COLUMNS.map(col => `<th>${col.label}</th>`).join('');
-    } else {
-        // Review/Modify tabs: button column
-        headerEl.innerHTML = '<th></th>' + DISPLAY_COLUMNS.map(col => `<th>${col.label}</th>`).join('');
-    }
+    headerEl.innerHTML = '<th></th>' + DISPLAY_COLUMNS.map(col => `<th>${col.label}</th>`).join('');
 
     if (reviewRecords.length === 0) {
         bodyEl.innerHTML = `<tr><td colspan="${DISPLAY_COLUMNS.length + 1}" style="text-align: center; color: #888; padding: 2rem;">No records found</td></tr>`;
@@ -1537,63 +1440,46 @@ function renderReviewRecords() {
         const rowNum = record._rowNumber;
         const isReviewed = reviewedRows.has(rowNum);
         const isSelected = selectedRecordRow !== null && Number(selectedRecordRow) === Number(rowNum);
-        const isSubmitSelected = submitSelectedRows.has(rowNum);
+        const duplicateMatches = Array.isArray(record.duplicate_matches) ? record.duplicate_matches : [];
+        const isDuplicate = duplicateMatches.length > 0;
+        const duplicateSummary = isDuplicate ? formatDuplicateWarning(duplicateMatches) : '';
 
         const cells = DISPLAY_COLUMNS.map(col => {
             const value = getField(record, col.key);
-            // Special styling for Status
             if (col.key === 'Status') {
                 const statusClass = value.toLowerCase().includes('confirmed') ? 'status-confirmed' : 'status-waiting';
                 return `<td><span class="${statusClass}">${value}</span></td>`;
             }
+            if (col.key === 'Vender' && isDuplicate) {
+                return `<td>${value} <span class="duplicate-badge" title="Possible duplicate of ${escapeProjectOptionHtml(duplicateSummary)}">Possible duplicate</span></td>`;
+            }
             return `<td>${value}</td>`;
         }).join('');
 
-        if (currentReviewTab === 'submit') {
-            // Submit tab: checkbox
-            return `
-                <tr class="review-row ${isSubmitSelected ? 'submit-selected' : ''}" 
-                    data-row="${rowNum}" data-idx="${idx}">
-                    <td><input type="checkbox" class="submit-checkbox" data-row="${rowNum}" ${isSubmitSelected ? 'checked' : ''} /></td>
-                    ${cells}
-                </tr>
-            `;
-        } else {
-            // Review/Modify tabs: review and delete buttons
-            return `
-                <tr class="review-row ${isReviewed ? 'reviewed' : ''} ${isSelected ? 'selected' : ''}" 
-                    data-row="${rowNum}" data-idx="${idx}">
-                    <td style="white-space: nowrap;">
-                        <button class="review-btn" data-row="${rowNum}">Review</button>
-                        <button class="delete-btn" data-row="${rowNum}">Delete</button>
-                    </td>
-                    ${cells}
-                </tr>
-            `;
-        }
+        return `
+            <tr class="review-row ${isReviewed ? 'reviewed' : ''} ${isSelected ? 'selected' : ''} ${isDuplicate ? 'duplicate' : ''}"
+                data-row="${rowNum}" data-idx="${idx}">
+                <td style="white-space: nowrap;">
+                    <button class="review-btn" data-row="${rowNum}">Review</button>
+                    <button class="delete-btn" data-row="${rowNum}">Delete</button>
+                </td>
+                ${cells}
+            </tr>
+        `;
     }).join('');
 
     // Attach click events
     bodyEl.querySelectorAll('.review-row').forEach(row => {
         row.onclick = (e) => {
-            if (currentReviewTab === 'submit') {
-                // Submit tab: handle checkbox
-                if (e.target.classList.contains('submit-checkbox')) {
-                    const rowNum = parseInt(e.target.dataset.row);
-                    toggleSubmitSelect(rowNum);
-                }
+            if (e.target.classList.contains('review-btn')) {
+                const rowNum = parseInt(e.target.dataset.row);
+                toggleReviewed(rowNum);
+            } else if (e.target.classList.contains('delete-btn')) {
+                const rowNum = parseInt(e.target.dataset.row);
+                deleteInvoiceRecord(rowNum);
             } else {
-                // Review/Modify tabs
-                if (e.target.classList.contains('review-btn')) {
-                    const rowNum = parseInt(e.target.dataset.row);
-                    toggleReviewed(rowNum);
-                } else if (e.target.classList.contains('delete-btn')) {
-                    const rowNum = parseInt(e.target.dataset.row);
-                    deleteInvoiceRecord(rowNum);
-                } else {
-                    const idx = parseInt(row.dataset.idx);
-                    selectRecord(idx);
-                }
+                const idx = parseInt(row.dataset.idx);
+                selectRecord(idx);
             }
         };
     });
@@ -1707,40 +1593,29 @@ function formatCleanupOutcome(value) {
     return String(value);
 }
 
-// Submit tab functions
-function toggleSubmitSelect(rowNum) {
-    if (submitSelectedRows.has(rowNum)) {
-        submitSelectedRows.delete(rowNum);
-    } else {
-        submitSelectedRows.add(rowNum);
-    }
-    renderReviewRecords();
-}
-
-function toggleSubmitSelectAll() {
-    const allSelected = reviewRecords.length > 0 && reviewRecords.every(r => submitSelectedRows.has(r._rowNumber));
-    if (allSelected) {
-        // Deselect all
-        submitSelectedRows.clear();
-    } else {
-        // Select all
-        reviewRecords.forEach(r => submitSelectedRows.add(r._rowNumber));
-    }
-    renderReviewRecords();
-}
-
-async function submitSelectedRecords() {
-    if (submitSelectedRows.size === 0) {
-        alert('Please select at least one record to submit');
+async function submitReviewedRecords() {
+    if (reviewedRows.size === 0) {
+        alert('Please review at least one record before submitting');
         return;
     }
 
-    const confirmed = confirm(`Are you sure you want to submit ${submitSelectedRows.size} record(s)?`);
+    for (const rowNum of reviewedRows) {
+        const record = reviewRecords.find(r => r._rowNumber === rowNum);
+        if (!record) continue;
+        for (const field of REVIEW_DISPLAY_FIELDS) {
+            if (OPTIONAL_REVIEW_FIELDS.has(field)) continue;
+            if (!record[field] || String(record[field]).trim() === '') {
+                alert(`Record row ${rowNum} has empty field: ${field}`);
+                return;
+            }
+        }
+    }
+
+    const confirmed = confirm(`Are you sure you want to submit ${reviewedRows.size} reviewed record(s)?`);
     if (!confirmed) return;
 
-    // Collect selected records data for Invoice_ID generation
     const recordsToSubmit = reviewRecords
-        .filter(r => submitSelectedRows.has(r._rowNumber))
+        .filter(r => reviewedRows.has(r._rowNumber))
         .map(r => ({
             rowNumber: r._rowNumber,
             companyId: (r['Charge to Company'] || '').trim(),
@@ -1752,7 +1627,6 @@ async function submitSelectedRecords() {
 
     console.log('[DEBUG] Records to submit:', recordsToSubmit);
 
-    // Show progress modal
     const progressModal = document.getElementById('progress-modal');
     const progressFill = document.getElementById('progress-fill');
     const progressCurrent = document.getElementById('progress-current');
@@ -1773,7 +1647,6 @@ async function submitSelectedRecords() {
     let errorCount = 0;
 
     try {
-        // Submit records one by one to show progress
         for (let i = 0; i < recordsToSubmit.length; i++) {
             const record = recordsToSubmit[i];
             const progress = Math.round(((i) / recordsToSubmit.length) * 100);
@@ -1792,6 +1665,7 @@ async function submitSelectedRecords() {
 
                 if (json.success) {
                     successCount++;
+                    reviewedRows.delete(record.rowNumber);
                     progressDetails.innerHTML += `<div class="item success">✓ Row ${record.rowNumber}: ${record.projectCode} - ${record.amount}${record.currency}</div>`;
                 } else {
                     errorCount++;
@@ -1802,11 +1676,9 @@ async function submitSelectedRecords() {
                 progressDetails.innerHTML += `<div class="item error">✗ Row ${record.rowNumber}: ${e.message}</div>`;
             }
 
-            // Scroll to bottom of details
             progressDetails.scrollTop = progressDetails.scrollHeight;
         }
 
-        // Complete
         progressFill.style.width = '100%';
         progressCurrent.textContent = recordsToSubmit.length;
 
@@ -1818,11 +1690,9 @@ async function submitSelectedRecords() {
             progressStatus.textContent = `Success: ${successCount}, Failed: ${errorCount}`;
         }
 
-        // Wait a moment then close
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         progressModal.style.display = 'none';
-        submitSelectedRows.clear();
         await loadReviewRecords();
 
     } catch (e) {
@@ -1830,15 +1700,12 @@ async function submitSelectedRecords() {
         progressTitle.textContent = 'Submission Failed';
         progressStatus.textContent = `Error: ${e.message}`;
 
-        // Wait then close
         await new Promise(resolve => setTimeout(resolve, 3000));
         progressModal.style.display = 'none';
     }
 }
 
-// Make submit functions globally accessible
-window.toggleSubmitSelectAll = toggleSubmitSelectAll;
-window.submitSelectedRecords = submitSelectedRecords;
+window.submitReviewedRecords = submitReviewedRecords;
 
 function selectRecord(idx) {
     const record = reviewRecords[idx];
@@ -1880,6 +1747,10 @@ async function renderDetailForm(record) {
     };
 
     let html = '<h3>Invoice Details</h3>';
+    const duplicateWarning = formatDuplicateWarning(record.duplicate_matches);
+    if (duplicateWarning) {
+        html += `<div class="duplicate-warning">Possible duplicate of ${escapeProjectOptionHtml(duplicateWarning)}. Review both records and delete the extra copy if needed.</div>`;
+    }
 
     for (const field of REVIEW_DISPLAY_FIELDS) {
         const rawValue = getField(field);
@@ -2281,49 +2152,6 @@ async function saveRecordChanges() {
             saveBtn.disabled = false;
             saveBtn.innerText = originalBtnText;
         }
-    }
-}
-
-function showConfirmModal() {
-    const modal = document.getElementById('confirm-modal');
-    document.getElementById('confirm-modal-message').textContent =
-        `You have ${reviewedRows.size} reviewed invoice(s). Confirm to update their status to "Confirmed"?`;
-    modal.style.display = 'flex';
-}
-
-async function confirmReviewedInvoices() {
-    document.getElementById('confirm-modal').style.display = 'none';
-
-    // Validate all reviewed records
-    for (const rowNum of reviewedRows) {
-        const record = reviewRecords.find(r => r._rowNumber === rowNum);
-        if (!record) continue;
-
-        // Check for empty required fields (skip optional fields like Remarks)
-        for (const field of REVIEW_DISPLAY_FIELDS) {
-            if (OPTIONAL_REVIEW_FIELDS.has(field)) continue;
-            if (!record[field] || record[field].trim() === '') {
-                alert(`Record row ${rowNum} has empty field: ${field}`);
-                return;
-            }
-        }
-    }
-
-    // Update status for all reviewed records
-    try {
-        for (const rowNum of reviewedRows) {
-            await fetch('/api/confirm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rowNumber: rowNum })
-            });
-        }
-        alert(`${reviewedRows.size} invoice(s) confirmed!`);
-        reviewedRows.clear();
-        await loadReviewRecords();
-    } catch (e) {
-        console.error(e);
-        alert('Failed to confirm invoices');
     }
 }
 

@@ -32,6 +32,13 @@ test("submit conditionally finalizes the exact reserved invoice", async () => {
     );
     assert.match(source, /requireSingleSubmittedUpdate/);
     assert.match(source, /buildSubmitMessage\(results\)/);
+    assert.match(source, /resolveAmountHkd/);
+});
+
+test("expenses annotates duplicate matches for the review list", async () => {
+    const source = await readApi("expenses.js");
+    assert.match(source, /annotateDuplicates/);
+    assert.match(source, /Invoice Number/);
 });
 
 test("manage sequence lookup excludes deleted rows and rejects a missing row", async () => {

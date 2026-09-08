@@ -206,13 +206,6 @@
 
             <!-- Invoice Review Page -->
             <div id="invoice-review-area" style="display: none;">
-                <!-- Tabs -->
-                <div class="review-tabs">
-                    <button class="review-tab active" data-tab="review">Review</button>
-                    <button class="review-tab" data-tab="modify">Modify</button>
-                    <button class="review-tab" data-tab="submit">Submit</button>
-                </div>
-
                 <!-- Split Layout -->
                 <div class="review-split-layout">
                     <!-- Left: Records Table -->
@@ -224,7 +217,7 @@
                         <div id="review-actions" style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center;">
                             <button id="select-all-btn" type="button" class="btn-secondary">Select All</button>
                             <button id="deselect-all-btn" type="button" class="btn-secondary">Deselect All</button>
-                            <button id="submit-selected-btn" type="button" class="btn-primary" style="display: none;" onclick="submitSelectedRecords()">Submit Selected Records</button>
+                            <button id="submit-selected-btn" type="button" class="btn-primary">Submit Reviewed</button>
                         </div>
                         <div class="review-table-container">
                             <table class="review-table" id="review-table">
@@ -401,7 +394,7 @@
             <!-- Confirm Modal -->
             <div id="confirm-modal" class="modal" style="display: none;">
                 <div class="modal-content" style="width: 400px;">
-                    <h2>Do you confirm these invoices?</h2>
+                    <h2>Leave without submitting?</h2>
                     <p id="confirm-modal-message" style="margin: 20px 0; color: #ccc;"></p>
                     <div style="display: flex; gap: 10px;">
                         <button id="confirm-yes" class="btn-primary" style="flex:1;">Yes</button>
@@ -443,6 +436,7 @@
         </div>
     </div>
 
+    <script src="invoice-review.js"></script>
     <script src="project-options.js"></script>
     <script src="app.js"></script>
 </body>
