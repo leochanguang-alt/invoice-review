@@ -34,6 +34,8 @@ test('reconciliation page wires navigation and local match update', async () => 
     assert.match(source, /showReconciliationPage/);
     assert.match(source, /recon_match/);
     assert.match(source, /reconTransactions\[idx\]/);
+    assert.match(source, /openReconInvoicePreview/);
+    assert.match(source, /btn-view-invoice/);
     assert.doesNotMatch(
         source.slice(source.indexOf('async function matchReconTransaction'), source.indexOf('async function unmatchReconTransaction')),
         /loadReconTransactions\(/,

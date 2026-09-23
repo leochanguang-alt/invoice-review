@@ -2882,6 +2882,17 @@ function setupReconHandlersOnce() {
             if (reconSelectedStatementId) loadReconTransactions(reconSelectedStatementId);
         });
     }
+
+    const closeInvoiceModal = document.getElementById('close-recon-invoice-modal');
+    const invoiceModal = document.getElementById('recon-invoice-modal');
+    if (closeInvoiceModal) {
+        closeInvoiceModal.addEventListener('click', closeReconInvoicePreview);
+    }
+    if (invoiceModal) {
+        invoiceModal.addEventListener('click', (e) => {
+            if (e.target === invoiceModal) closeReconInvoicePreview();
+        });
+    }
 }
 
 function fileToBase64(file) {
@@ -3191,7 +3202,10 @@ function renderReconTransactions() {
         if (tx.matched_invoice_id && tx.matched_invoice) {
             const inv = tx.matched_invoice;
             matchCell = `<div><strong>${escapeHtml(inv.generated_invoice_id || ('#' + inv.id))}</strong><br>${escapeHtml(inv.vendor || '')}<br>${formatMoney(inv.amount, inv.currency)}</div>`;
-            actionCell = `<button type="button" class="btn-unmatch" data-unmatch="${tx.id}">Unmatch</button>`;
+            actionCell = `<div class="recon-actions">
+                <button type="button" class="btn-view-invoice" data-view-matched="${tx.id}">View</button>
+                <button type="button" class="btn-unmatch" data-unmatch="${tx.id}">Unmatch</button>
+            </div>`;
         } else if (tx.is_fee) {
             matchCell = '<span style="color:#94a3b8;">Fee — no invoice</span>';
             actionCell = '';
@@ -3204,7 +3218,10 @@ function renderReconTransactions() {
                     return `<option value="${inv.id}" ${idx === 0 ? 'selected' : ''}>${escapeHtml(label)}</option>`;
                 }).join('');
                 matchCell = `<div class="recon-candidate"><select data-candidate-for="${tx.id}">${opts}</select></div>`;
-                actionCell = `<button type="button" class="btn-match" data-match="${tx.id}">Match</button>`;
+                actionCell = `<div class="recon-actions">
+                    <button type="button" class="btn-view-invoice" data-view-candidate="${tx.id}">View</button>
+                    <button type="button" class="btn-match" data-match="${tx.id}">Match</button>
+                </div>`;
             } else {
                 matchCell = '<span style="color:#94a3b8;">No candidate</span>';
                 actionCell = '';
@@ -3232,6 +3249,85 @@ function renderReconTransactions() {
     body.querySelectorAll('[data-unmatch]').forEach((btn) => {
         btn.addEventListener('click', () => unmatchReconTransaction(btn.getAttribute('data-unmatch')));
     });
+    body.querySelectorAll('[data-view-matched]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const tx = reconTransactions.find((t) => String(t.id) === String(btn.getAttribute('data-view-matched')));
+            if (tx?.matched_invoice) openReconInvoicePreview(tx.matched_invoice);
+        });
+    });
+    body.querySelectorAll('[data-view-candidate]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const txId = btn.getAttribute('data-view-candidate');
+            const tx = reconTransactions.find((t) => String(t.id) === String(txId));
+            const select = document.querySelector(`select[data-candidate-for="${txId}"]`);
+            const invoiceId = select ? Number(select.value) : null;
+            const suggestion = (tx?.suggestions || []).find((s) => Number(s.invoice_id) === invoiceId)
+                || (tx?.suggestions || [])[0];
+            if (suggestion?.invoice) openReconInvoicePreview(suggestion.invoice);
+            else alert('No invoice attachment available for this candidate');
+        });
+    });
+}
+
+function reconInvoiceFileUrl(invoice) {
+    if (!invoice) return null;
+    const fileLink = invoice.file_link_r2 || invoice.achieved_file_link || invoice.file_link || '';
+    if (!fileLink) return null;
+
+    const isR2Link = fileLink.includes('r2.cloudflarestorage.com')
+        || fileLink.includes('.r2.dev')
+        || fileLink.includes('buiservice-assets')
+        || fileLink.startsWith('bui_invoice/')
+        || fileLink.startsWith('/bui_invoice/');
+
+    if (isR2Link || fileLink.startsWith('/')) {
+        const normalized = fileLink.startsWith('/') ? fileLink.slice(1) : fileLink;
+        if (normalized.startsWith('bui_invoice/')) {
+            return `/api/file?path=${encodeURIComponent(normalized)}`;
+        }
+        return `/api/file?link=${encodeURIComponent(fileLink)}`;
+    }
+    return fileLink;
+}
+
+function openReconInvoicePreview(invoice) {
+    const modal = document.getElementById('recon-invoice-modal');
+    const title = document.getElementById('recon-invoice-modal-title');
+    const meta = document.getElementById('recon-invoice-modal-meta');
+    const preview = document.getElementById('recon-invoice-preview');
+    if (!modal || !preview) return;
+
+    const label = invoice.generated_invoice_id || `#${invoice.id}`;
+    if (title) title.textContent = label;
+    if (meta) {
+        meta.textContent = [
+            invoice.vendor || '',
+            formatMoney(invoice.amount, invoice.currency),
+            invoice.invoice_date || '',
+        ].filter(Boolean).join(' · ');
+    }
+
+    const url = reconInvoiceFileUrl(invoice);
+    if (!url) {
+        preview.innerHTML = '<p style="color:#888;">No attachment available</p>';
+    } else {
+        const lower = String(invoice.file_link_r2 || invoice.achieved_file_link || invoice.file_link || '').toLowerCase();
+        const looksPdf = lower.includes('.pdf') || url.includes('.pdf');
+        if (looksPdf || !/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(lower)) {
+            preview.innerHTML = `<iframe src="${url}" title="Invoice preview"></iframe>`;
+        } else {
+            preview.innerHTML = `<img src="${url}" alt="Invoice attachment">`;
+        }
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeReconInvoicePreview() {
+    const modal = document.getElementById('recon-invoice-modal');
+    const preview = document.getElementById('recon-invoice-preview');
+    if (preview) preview.innerHTML = '';
+    if (modal) modal.style.display = 'none';
 }
 
 async function matchReconTransaction(txId) {
