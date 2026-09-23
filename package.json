@@ -30,6 +30,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "googleapis": "^169.0.0",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "pdfjs-dist": "^4.10.38"
   }
 }

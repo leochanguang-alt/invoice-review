@@ -6,6 +6,9 @@ node_modules/
 !package.json
 !package-lock.json
 !vercel.json
+!test/fixtures/**/*.json
+!test/fixtures/**/*.expected.json
+!test/fixtures/**/*.lines.json
 .DS_Store
 *.log
 headers_dump.txt

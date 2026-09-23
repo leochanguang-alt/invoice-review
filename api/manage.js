@@ -10,6 +10,7 @@ import {
     mapInvoiceSequenceFields,
     validateInvoiceProjectChange,
 } from "../lib/invoice-update-invariants.js";
+import { handleReconciliationAction } from "../lib/reconciliation-api.js";
 
 // Currency-Country linking helper
 async function getCurrencyList() {
@@ -126,6 +127,15 @@ export default async function handler(req, res) {
     try {
         if (!supabase) {
             return json(res, 500, { success: false, message: "Supabase client not initialized" });
+        }
+
+        // Bank reconciliation actions (mounted here to stay within Vercel Hobby function limits)
+        const reconBody = req.method === "GET"
+            ? { action: req.query?.action, statement_id: req.query?.statement_id, status: req.query?.status }
+            : (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {}));
+        if (reconBody?.action && String(reconBody.action).startsWith("recon_")) {
+            const handled = await handleReconciliationAction(req, res, reconBody, json);
+            if (handled) return;
         }
 
         if (req.method === "GET") {

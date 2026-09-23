@@ -297,6 +297,8 @@ function setupNavigation() {
             document.getElementById('settings-area').style.display = 'none';
             document.getElementById('invoice-review-area').style.display = 'none';
             document.getElementById('export-area').style.display = 'none';
+            const reconArea = document.getElementById('reconciliation-area');
+            if (reconArea) reconArea.style.display = 'none';
 
             if (page === 'summary') {
                 document.getElementById('content-area').style.display = 'block';
@@ -305,6 +307,8 @@ function setupNavigation() {
                 showSettingsPage();
             } else if (page === 'invoice') {
                 showInvoiceReviewPage();
+            } else if (page === 'reconciliation') {
+                showReconciliationPage();
             } else if (page === 'export') {
                 showExportPage();
             }
@@ -2841,3 +2845,473 @@ document.addEventListener('DOMContentLoaded', () => {
 window.showExportConfirmModal = showExportConfirmModal;
 window.showArchiveConfirmModal = showArchiveConfirmModal;
 
+
+// ============ FINANCE RECONCILIATION ============
+
+let reconStatements = [];
+let reconSelectedStatementId = null;
+let reconTransactions = [];
+let reconPreviews = []; // { id, filename, fileBase64, preview, error, duplicate }
+
+function showReconciliationPage() {
+    const area = document.getElementById('reconciliation-area');
+    if (!area) return;
+    area.style.display = 'block';
+    setupReconHandlersOnce();
+    loadReconStatements();
+}
+
+let reconHandlersReady = false;
+function setupReconHandlersOnce() {
+    if (reconHandlersReady) return;
+    reconHandlersReady = true;
+
+    const uploadBtn = document.getElementById('recon-upload-btn');
+    const fileInput = document.getElementById('recon-file-input');
+    const refreshBtn = document.getElementById('recon-refresh-btn');
+    const filterEl = document.getElementById('recon-tx-filter');
+
+    if (uploadBtn) {
+        uploadBtn.addEventListener('click', () => parseReconFiles());
+    }
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => loadReconStatements());
+    }
+    if (filterEl) {
+        filterEl.addEventListener('change', () => {
+            if (reconSelectedStatementId) loadReconTransactions(reconSelectedStatementId);
+        });
+    }
+}
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = String(reader.result || '');
+            const base64 = result.includes(',') ? result.split(',')[1] : result;
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function formatMoney(amount, currency) {
+    if (amount == null || amount === '') return '—';
+    const n = Number(amount);
+    const formatted = Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : amount;
+    return currency ? `${currency} ${formatted}` : String(formatted);
+}
+
+async function parseReconFiles() {
+    const fileInput = document.getElementById('recon-file-input');
+    const files = Array.from(fileInput?.files || []);
+    if (!files.length) {
+        alert('Please select one or more PDF files');
+        return;
+    }
+
+    for (const file of files) {
+        if (file.size > 3 * 1024 * 1024) {
+            reconPreviews.push({
+                id: `${Date.now()}-${Math.random()}`,
+                filename: file.name,
+                error: 'File exceeds 3MB limit',
+            });
+            renderReconPreviews();
+            continue;
+        }
+
+        try {
+            const fileBase64 = await fileToBase64(file);
+            const res = await fetch('/api/manage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'recon_upload',
+                    filename: file.name,
+                    file_base64: fileBase64,
+                }),
+            });
+            const json = await res.json();
+            if (json.duplicate) {
+                reconPreviews.push({
+                    id: `${Date.now()}-${Math.random()}`,
+                    filename: file.name,
+                    fileBase64,
+                    duplicate: true,
+                    error: json.message,
+                    existing: json.existing,
+                    preview: json.preview || null,
+                });
+            } else if (!json.success) {
+                reconPreviews.push({
+                    id: `${Date.now()}-${Math.random()}`,
+                    filename: file.name,
+                    error: json.message || 'Parse failed',
+                });
+            } else {
+                reconPreviews.push({
+                    id: `${Date.now()}-${Math.random()}`,
+                    filename: file.name,
+                    fileBase64,
+                    preview: json.preview,
+                });
+            }
+        } catch (err) {
+            reconPreviews.push({
+                id: `${Date.now()}-${Math.random()}`,
+                filename: file.name,
+                error: err.message || 'Upload failed',
+            });
+        }
+        renderReconPreviews();
+    }
+
+    if (fileInput) fileInput.value = '';
+}
+
+function renderReconPreviews() {
+    const list = document.getElementById('recon-preview-list');
+    if (!list) return;
+    if (!reconPreviews.length) {
+        list.innerHTML = '';
+        return;
+    }
+
+    list.innerHTML = reconPreviews.map((item) => {
+        if (item.error || item.duplicate) {
+            return `<div class="recon-preview-card error">
+                <strong>${escapeHtml(item.filename)}</strong>
+                <div>${escapeHtml(item.error || 'Duplicate')}</div>
+                <div class="recon-preview-actions">
+                    <button type="button" class="btn-secondary" data-dismiss="${item.id}">Dismiss</button>
+                </div>
+            </div>`;
+        }
+        const p = item.preview;
+        const warnClass = (p.warnings && p.warnings.length) ? ' warn' : '';
+        const warnings = (p.warnings || []).map((w) => `<div style="color:#b45309;font-size:0.8rem;">⚠ ${escapeHtml(w)}</div>`).join('');
+        return `<div class="recon-preview-card${warnClass}">
+            <div class="recon-preview-meta">
+                <span><strong>${escapeHtml(p.bank)}</strong> ****${escapeHtml(p.card_last4 || '')}</span>
+                <span>${escapeHtml(p.period_start || '')} → ${escapeHtml(p.period_end || '')}</span>
+                <span>${p.tx_count} txs</span>
+                <span>Debit ${formatMoney(p.total_debit, p.currency)}</span>
+                <span>Credit ${formatMoney(p.total_credit, p.currency)}</span>
+            </div>
+            <div style="font-size:0.8rem;color:#64748b;">${escapeHtml(item.filename)}</div>
+            ${warnings}
+            <div class="recon-preview-actions" style="margin-top:0.5rem;">
+                <button type="button" class="btn-primary" data-confirm="${item.id}">Confirm Import</button>
+                <button type="button" class="btn-secondary" data-dismiss="${item.id}">Dismiss</button>
+            </div>
+        </div>`;
+    }).join('');
+
+    list.querySelectorAll('[data-dismiss]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            reconPreviews = reconPreviews.filter((p) => p.id !== btn.getAttribute('data-dismiss'));
+            renderReconPreviews();
+        });
+    });
+    list.querySelectorAll('[data-confirm]').forEach((btn) => {
+        btn.addEventListener('click', () => confirmReconImport(btn.getAttribute('data-confirm')));
+    });
+}
+
+async function confirmReconImport(previewId) {
+    const item = reconPreviews.find((p) => p.id === previewId);
+    if (!item || !item.fileBase64 || !item.preview) return;
+
+    const btn = document.querySelector(`[data-confirm="${previewId}"]`);
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Importing…';
+    }
+
+    try {
+        const res = await fetch('/api/manage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'recon_confirm',
+                filename: item.filename,
+                file_base64: item.fileBase64,
+                preview: item.preview,
+            }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+            alert(json.message || 'Import failed');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Confirm Import';
+            }
+            return;
+        }
+        reconPreviews = reconPreviews.filter((p) => p.id !== previewId);
+        renderReconPreviews();
+        await loadReconStatements();
+        if (json.statement?.id) {
+            selectReconStatement(json.statement.id);
+        }
+    } catch (err) {
+        alert(err.message || 'Import failed');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Confirm Import';
+        }
+    }
+}
+
+async function loadReconStatements() {
+    try {
+        const res = await fetch('/api/manage?action=recon_statements');
+        const json = await res.json();
+        if (!json.success) {
+            console.error(json.message);
+            return;
+        }
+        reconStatements = json.data || [];
+        renderReconStatements();
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderReconStatements() {
+    const body = document.getElementById('recon-statements-body');
+    if (!body) return;
+
+    if (!reconStatements.length) {
+        body.innerHTML = `<tr><td colspan="5" class="recon-empty">No statements uploaded yet</td></tr>`;
+        return;
+    }
+
+    body.innerHTML = reconStatements.map((s) => {
+        const selected = String(s.id) === String(reconSelectedStatementId) ? ' selected' : '';
+        const period = `${s.period_start || ''} → ${s.period_end || ''}`;
+        return `<tr class="recon-row${selected}" data-statement-id="${s.id}">
+            <td>${escapeHtml(s.bank)}</td>
+            <td>****${escapeHtml(s.card_last4 || '')}</td>
+            <td>${escapeHtml(period)}</td>
+            <td>${s.matched_count || 0}/${s.tx_count || 0}</td>
+            <td>
+                ${s.r2_key ? `<a href="/api/file?path=${encodeURIComponent(s.r2_key)}" target="_blank" rel="noopener">PDF</a>` : ''}
+                <button type="button" class="btn-secondary" data-delete-statement="${s.id}" style="margin-left:4px;padding:0.2rem 0.4rem;font-size:0.7rem;">Del</button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    body.querySelectorAll('[data-statement-id]').forEach((row) => {
+        row.addEventListener('click', (e) => {
+            if (e.target.closest('a,button')) return;
+            selectReconStatement(row.getAttribute('data-statement-id'));
+        });
+    });
+    body.querySelectorAll('[data-delete-statement]').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const id = btn.getAttribute('data-delete-statement');
+            if (!confirm('Delete this statement? (only if no matches)')) return;
+            const res = await fetch('/api/manage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'recon_delete_statement', statement_id: Number(id) }),
+            });
+            const json = await res.json();
+            if (!json.success) {
+                alert(json.message || 'Delete failed');
+                return;
+            }
+            if (String(reconSelectedStatementId) === String(id)) {
+                reconSelectedStatementId = null;
+                reconTransactions = [];
+                renderReconTransactions();
+            }
+            loadReconStatements();
+        });
+    });
+}
+
+function selectReconStatement(id) {
+    reconSelectedStatementId = id;
+    renderReconStatements();
+    const s = reconStatements.find((x) => String(x.id) === String(id));
+    const title = document.getElementById('recon-tx-title');
+    if (title) {
+        title.textContent = s ? `— ${s.bank} ****${s.card_last4 || ''} ${s.period_start || ''}` : '';
+    }
+    loadReconTransactions(id);
+}
+
+async function loadReconTransactions(statementId) {
+    const filter = document.getElementById('recon-tx-filter')?.value || 'all';
+    const body = document.getElementById('recon-tx-body');
+    if (body) body.innerHTML = `<tr><td colspan="7" class="recon-empty">Loading…</td></tr>`;
+
+    try {
+        const res = await fetch(`/api/manage?action=recon_transactions&statement_id=${encodeURIComponent(statementId)}&status=${encodeURIComponent(filter)}`);
+        const json = await res.json();
+        if (!json.success) {
+            if (body) body.innerHTML = `<tr><td colspan="7" class="recon-empty">${escapeHtml(json.message || 'Failed')}</td></tr>`;
+            return;
+        }
+        reconTransactions = json.data || [];
+        renderReconTransactions();
+    } catch (err) {
+        if (body) body.innerHTML = `<tr><td colspan="7" class="recon-empty">${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+function renderReconTransactions() {
+    const body = document.getElementById('recon-tx-body');
+    if (!body) return;
+
+    if (!reconSelectedStatementId) {
+        body.innerHTML = `<tr><td colspan="7" class="recon-empty">Select a statement</td></tr>`;
+        return;
+    }
+    if (!reconTransactions.length) {
+        body.innerHTML = `<tr><td colspan="7" class="recon-empty">No transactions</td></tr>`;
+        return;
+    }
+
+    body.innerHTML = reconTransactions.map((tx) => {
+        const matchedClass = tx.matched_invoice_id ? ' matched' : '';
+        const dirBadge = tx.is_fee
+            ? '<span class="recon-badge fee">fee</span>'
+            : `<span class="recon-badge ${tx.direction}">${escapeHtml(tx.direction)}</span>`;
+
+        let matchCell = '';
+        let actionCell = '';
+
+        if (tx.matched_invoice_id && tx.matched_invoice) {
+            const inv = tx.matched_invoice;
+            matchCell = `<div><strong>${escapeHtml(inv.generated_invoice_id || ('#' + inv.id))}</strong><br>${escapeHtml(inv.vendor || '')}<br>${formatMoney(inv.amount, inv.currency)}</div>`;
+            actionCell = `<button type="button" class="btn-unmatch" data-unmatch="${tx.id}">Unmatch</button>`;
+        } else if (tx.is_fee) {
+            matchCell = '<span style="color:#94a3b8;">Fee — no invoice</span>';
+            actionCell = '';
+        } else {
+            const suggestions = tx.suggestions || [];
+            if (suggestions.length) {
+                const opts = suggestions.map((s, idx) => {
+                    const inv = s.invoice;
+                    const label = `${inv.generated_invoice_id || ('#' + inv.id)} · ${inv.vendor || ''} · ${formatMoney(inv.amount, inv.currency)} (${Math.round(s.score)})`;
+                    return `<option value="${inv.id}" ${idx === 0 ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+                }).join('');
+                matchCell = `<div class="recon-candidate"><select data-candidate-for="${tx.id}">${opts}</select></div>`;
+                actionCell = `<button type="button" class="btn-match" data-match="${tx.id}">Match</button>`;
+            } else {
+                matchCell = '<span style="color:#94a3b8;">No candidate</span>';
+                actionCell = '';
+            }
+        }
+
+        const txnAmt = formatMoney(tx.txn_amount, tx.txn_currency);
+        const postAmt = formatMoney(tx.posting_amount, tx.posting_currency);
+        const same = tx.txn_currency === tx.posting_currency && Number(tx.txn_amount) === Number(tx.posting_amount);
+
+        return `<tr class="recon-row${matchedClass}" data-tx-id="${tx.id}">
+            <td>${escapeHtml(tx.txn_date || tx.posting_date || '')}</td>
+            <td class="recon-desc">${escapeHtml(tx.description || '')}</td>
+            <td class="recon-amount">${escapeHtml(txnAmt)}</td>
+            <td class="recon-amount">${same ? '—' : escapeHtml(postAmt)}</td>
+            <td>${dirBadge}</td>
+            <td>${matchCell}</td>
+            <td>${actionCell}</td>
+        </tr>`;
+    }).join('');
+
+    body.querySelectorAll('[data-match]').forEach((btn) => {
+        btn.addEventListener('click', () => matchReconTransaction(btn.getAttribute('data-match')));
+    });
+    body.querySelectorAll('[data-unmatch]').forEach((btn) => {
+        btn.addEventListener('click', () => unmatchReconTransaction(btn.getAttribute('data-unmatch')));
+    });
+}
+
+async function matchReconTransaction(txId) {
+    const select = document.querySelector(`select[data-candidate-for="${txId}"]`);
+    const invoiceId = select ? Number(select.value) : null;
+    if (!invoiceId) {
+        alert('Select a candidate invoice');
+        return;
+    }
+
+    const btn = document.querySelector(`[data-match="${txId}"]`);
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/manage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'recon_match',
+                transaction_id: Number(txId),
+                invoice_id: invoiceId,
+            }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+            alert(json.message || 'Match failed');
+            if (btn) btn.disabled = false;
+            return;
+        }
+
+        // Local update — no full reload
+        const idx = reconTransactions.findIndex((t) => String(t.id) === String(txId));
+        if (idx >= 0) {
+            reconTransactions[idx] = {
+                ...reconTransactions[idx],
+                matched_invoice_id: json.invoice_id,
+                matched_at: json.matched_at,
+                matched_invoice: json.matched_invoice,
+                suggestions: [],
+            };
+        }
+        const stmt = reconStatements.find((s) => String(s.id) === String(reconSelectedStatementId));
+        if (stmt) stmt.matched_count = (stmt.matched_count || 0) + 1;
+        renderReconStatements();
+        renderReconTransactions();
+    } catch (err) {
+        alert(err.message || 'Match failed');
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function unmatchReconTransaction(txId) {
+    try {
+        const res = await fetch('/api/manage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'recon_unmatch',
+                transaction_id: Number(txId),
+            }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+            alert(json.message || 'Unmatch failed');
+            return;
+        }
+        // Reload this statement's txs to refresh suggestions
+        await loadReconTransactions(reconSelectedStatementId);
+        const stmt = reconStatements.find((s) => String(s.id) === String(reconSelectedStatementId));
+        if (stmt && stmt.matched_count > 0) stmt.matched_count -= 1;
+        renderReconStatements();
+    } catch (err) {
+        alert(err.message || 'Unmatch failed');
+    }
+}
+
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}

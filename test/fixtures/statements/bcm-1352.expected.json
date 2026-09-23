@@ -1,0 +1,48 @@
+{
+  "bank": "BCM",
+  "card_last4": "1352",
+  "period_start": "2026-08-12",
+  "period_end": "2026-09-11",
+  "tx_count": 5,
+  "total_debit": 190.38,
+  "total_credit": 1527.19,
+  "warnings": [],
+  "samples": [
+    {
+      "direction": "credit",
+      "description": "信⽤卡还款 还款 - ⼈⾏ - 陈⼴ 7132 转⼊卡 7132 招商银⾏",
+      "txn_currency": "CNY",
+      "txn_amount": 442.09,
+      "posting_currency": "CNY",
+      "posting_amount": 442.09,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "退款 MOB Chemin de Fer Mont",
+      "txn_currency": "CHF",
+      "txn_amount": 654.8,
+      "posting_currency": "USD",
+      "posting_amount": 811.4,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "退款 shopluzern.com",
+      "txn_currency": "CHF",
+      "txn_amount": 222,
+      "posting_currency": "USD",
+      "posting_amount": 273.7,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "消费 wwidealpdf Geneve CHE",
+      "txn_currency": "GBP",
+      "txn_amount": 29.9,
+      "posting_currency": "USD",
+      "posting_amount": 40.52,
+      "is_fee": false
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "bank": "REVOLUT",
+  "card_last4": "0259",
+  "period_start": "2026-08-01",
+  "period_end": "2026-08-31",
+  "tx_count": 109,
+  "total_debit": 221971.89,
+  "total_credit": 266243.58,
+  "warnings": [],
+  "samples": [
+    {
+      "direction": "credit",
+      "description": "Exchanged to GBP",
+      "txn_currency": "USD",
+      "txn_amount": 135.35,
+      "posting_currency": "GBP",
+      "posting_amount": 100,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "Uber Revolut Rate £1.00 = 12.89 SEK (ECB rate* £1.00 = 12.84",
+      "txn_currency": "SEK",
+      "txn_amount": 582,
+      "posting_currency": "GBP",
+      "posting_amount": 45.16,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "Voi Scooters Revolut Rate £1.00 = 8.71 DKK (ECB rate* £1.00 ",
+      "txn_currency": "DKK",
+      "txn_amount": 7.5,
+      "posting_currency": "GBP",
+      "posting_amount": 0.87,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "Exchanged to SEK",
+      "txn_currency": "USD",
+      "txn_amount": 1000,
+      "posting_currency": "SEK",
+      "posting_amount": 9467.49,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "Exchanged to SEK",
+      "txn_currency": "USD",
+      "txn_amount": 401.46,
+      "posting_currency": "SEK",
+      "posting_amount": 3794.99,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "Exchanged to USD",
+      "txn_currency": "USD",
+      "txn_amount": 798.1,
+      "posting_currency": "SEK",
+      "posting_amount": 7589.98,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "British Airways",
+      "txn_currency": "EUR",
+      "txn_amount": 950.5,
+      "posting_currency": "EUR",
+      "posting_amount": 950.5,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "Payment from CHEN GUANG Reference: FAMILY EXPENSE",
+      "txn_currency": "USD",
+      "txn_amount": 99977.5,
+      "posting_currency": "USD",
+      "posting_amount": 99977.5,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "Payment from CHEN GUANG Reference: MEDICAL (IVF) EXPENSE",
+      "txn_currency": "USD",
+      "txn_amount": 100977.5,
+      "posting_currency": "USD",
+      "posting_amount": 100977.5,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "Weixin Revolut Rate $1.00 = 6.71 CNY (ECB rate* $1.00 = 6.75",
+      "txn_currency": "CNY",
+      "txn_amount": 200,
+      "posting_currency": "USD",
+      "posting_amount": 29.82,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "Exchanged to GBP",
+      "txn_currency": "GBP",
+      "txn_amount": 100,
+      "posting_currency": "USD",
+      "posting_amount": 135.35,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "Payment from CHEN GUANG Reference: MEDICAL EXPENSE",
+      "txn_currency": "USD",
+      "txn_amount": 50177.5,
+      "posting_currency": "USD",
+      "posting_amount": 50177.5,
+      "is_fee": false
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "bank": "BCM",
+  "card_last4": "7761",
+  "period_start": "2026-08-12",
+  "period_end": "2026-09-11",
+  "tx_count": 16,
+  "total_debit": 3168.53,
+  "total_credit": 58050.84,
+  "warnings": [],
+  "samples": [
+    {
+      "direction": "credit",
+      "description": "信⽤卡还款 还款 - ⼈⾏ - 陈⼴ 7132 转⼊卡 7132 招商银⾏",
+      "txn_currency": "CNY",
+      "txn_amount": 57850.84,
+      "posting_currency": "CNY",
+      "posting_amount": 57850.84,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "退货 财付通 - 美团",
+      "txn_currency": "CNY",
+      "txn_amount": 200,
+      "posting_currency": "CNY",
+      "posting_amount": 200,
+      "is_fee": false
+    }
+  ]
+}

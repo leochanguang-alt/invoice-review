@@ -1,0 +1,84 @@
+{
+  "bank": "HSBC",
+  "card_last4": "1374",
+  "period_start": "2026-07-27",
+  "period_end": "2026-08-22",
+  "tx_count": 118,
+  "total_debit": 3546.12,
+  "total_credit": 183,
+  "warnings": [],
+  "samples": [
+    {
+      "direction": "credit",
+      "description": "Salomon Covent Garden London",
+      "txn_currency": "GBP",
+      "txn_amount": 21,
+      "posting_currency": "GBP",
+      "posting_amount": 21,
+      "is_fee": false
+    },
+    {
+      "direction": "credit",
+      "description": "Salomon Covent Garden London",
+      "txn_currency": "GBP",
+      "txn_amount": 162,
+      "posting_currency": "GBP",
+      "posting_amount": 162,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "))) PIC POC ULRIKSD Solna SWE",
+      "txn_currency": "SEK",
+      "txn_amount": 310,
+      "posting_currency": "GBP",
+      "posting_amount": 24.2,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "NON-STERLING TRANSACTION FEE",
+      "txn_currency": "GBP",
+      "txn_amount": 0.72,
+      "posting_currency": "GBP",
+      "posting_amount": 0.72,
+      "is_fee": true
+    },
+    {
+      "direction": "debit",
+      "description": "))) Inflight Services Norw Kista SWE",
+      "txn_currency": "SEK",
+      "txn_amount": 73,
+      "posting_currency": "GBP",
+      "posting_amount": 5.68,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "NON-STERLING TRANSACTION FEE",
+      "txn_currency": "GBP",
+      "txn_amount": 0.17,
+      "posting_currency": "GBP",
+      "posting_amount": 0.17,
+      "is_fee": true
+    },
+    {
+      "direction": "debit",
+      "description": "EXPRESSVPN.COM LONDON LND",
+      "txn_currency": "USD",
+      "txn_amount": 21.94,
+      "posting_currency": "GBP",
+      "posting_amount": 16.15,
+      "is_fee": false
+    },
+    {
+      "direction": "debit",
+      "description": "NON-STERLING TRANSACTION FEE",
+      "txn_currency": "GBP",
+      "txn_amount": 0.48,
+      "posting_currency": "GBP",
+      "posting_amount": 0.48,
+      "is_fee": true
+    }
+  ]
+}

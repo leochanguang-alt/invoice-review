@@ -252,6 +252,75 @@
                 </div>
             </div>
 
+            <!-- Finance Reconciliation Page -->
+            <div id="reconciliation-area" style="display: none;">
+                <div class="recon-upload-section card">
+                    <div class="recon-upload-header">
+                        <h3>Upload Bank Statements</h3>
+                        <p class="recon-hint">Supported: Bank of Communications (BCM), HSBC Premier Card, Revolut. PDF only, max 3MB.</p>
+                    </div>
+                    <div class="recon-upload-controls">
+                        <input type="file" id="recon-file-input" accept="application/pdf,.pdf" multiple>
+                        <button type="button" id="recon-upload-btn" class="btn-primary">Parse Selected</button>
+                    </div>
+                    <div id="recon-preview-list" class="recon-preview-list"></div>
+                </div>
+
+                <div class="recon-split-layout">
+                    <div class="recon-left-panel">
+                        <div class="recon-panel-header">
+                            <h3>Statements</h3>
+                            <button type="button" id="recon-refresh-btn" class="btn-secondary">Refresh</button>
+                        </div>
+                        <div class="recon-table-container">
+                            <table class="recon-table" id="recon-statements-table">
+                                <thead>
+                                    <tr>
+                                        <th>Bank</th>
+                                        <th>Account</th>
+                                        <th>Period</th>
+                                        <th>Matched</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recon-statements-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="recon-right-panel">
+                        <div class="recon-panel-header">
+                            <h3>Transactions <span id="recon-tx-title" class="recon-subtitle"></span></h3>
+                            <div class="recon-filters">
+                                <select id="recon-tx-filter">
+                                    <option value="all">All</option>
+                                    <option value="unmatched" selected>Unmatched</option>
+                                    <option value="matched">Matched</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="recon-table-container">
+                            <table class="recon-table" id="recon-tx-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Description</th>
+                                        <th>Txn</th>
+                                        <th>Posting</th>
+                                        <th>Dir</th>
+                                        <th>Match / Candidate</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recon-tx-body">
+                                    <tr><td colspan="7" class="recon-empty">Select a statement</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Project Management Page -->
             <div id="export-area" style="display: none;">
                 <div class="export-toolbar">
