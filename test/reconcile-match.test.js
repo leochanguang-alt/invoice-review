@@ -99,9 +99,19 @@ test('date window excludes far invoices; reconciled invoices excluded', () => {
         posting_currency: 'GBP',
         posting_amount: 10,
     };
+    // More than ±1 day away
     assert.equal(scoreInvoiceMatch(tx, {
-        id: 4, invoice_date: '2026-07-01', vendor: 'X', currency: 'GBP', amount: 10, status: 'reviewed',
+        id: 4, invoice_date: '2026-08-08', vendor: 'X', currency: 'GBP', amount: 10, status: 'reviewed',
     }, { ratesByCurrency: rates }), null);
+
+    assert.equal(scoreInvoiceMatch(tx, {
+        id: 4, invoice_date: '2026-08-12', vendor: 'X', currency: 'GBP', amount: 10, status: 'reviewed',
+    }, { ratesByCurrency: rates }), null);
+
+    // Within ±1 day is allowed
+    assert.ok(scoreInvoiceMatch(tx, {
+        id: 6, invoice_date: '2026-08-11', vendor: 'X', currency: 'GBP', amount: 10, status: 'reviewed',
+    }, { ratesByCurrency: rates }));
 
     assert.equal(scoreInvoiceMatch(tx, {
         id: 5, invoice_date: '2026-08-10', vendor: 'X', currency: 'GBP', amount: 10,
