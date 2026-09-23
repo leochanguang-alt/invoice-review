@@ -457,117 +457,48 @@ function getFilteredData() {
 
 function renderExpenseChart() {
     const filteredData = getFilteredData();
-    
-    // Group by month
-    const monthlyData = {};
-    const breakdownData = {}; // For stacking by category/project
-    
-    const selectedCompany = document.getElementById('filter-company').value;
-    const selectedProject = document.getElementById('filter-project').value;
-    const selectedCategory = document.getElementById('filter-category').value;
-    
-    // Determine breakdown dimension
-    let breakdownKey = 'Category';
-    if (selectedCategory && !selectedProject) {
-        breakdownKey = 'Charge to Project';
-    }
-    
-    filteredData.forEach(item => {
-        const date = item['Invoice Date'];
-        if (!date) return;
-        
+
+    // Aggregate total HKD amount per category
+    const categoryTotals = {};
+    filteredData.forEach((item) => {
+        const category = (item['Category'] || 'Unknown').toString().trim() || 'Unknown';
         const amount = parseFloat((item['Amount(HKD)'] || '0').toString().replace(/,/g, '')) || 0;
-        const breakdownValue = item[breakdownKey] || 'Other';
-        
-        const dateObj = new Date(date);
-        if (isNaN(dateObj.getTime())) return;
-        
-        const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-        
-        if (!monthlyData[monthKey]) {
-            monthlyData[monthKey] = 0;
-        }
-        monthlyData[monthKey] += amount;
-        
-        if (!breakdownData[monthKey]) {
-            breakdownData[monthKey] = {};
-        }
-        if (!breakdownData[monthKey][breakdownValue]) {
-            breakdownData[monthKey][breakdownValue] = 0;
-        }
-        breakdownData[monthKey][breakdownValue] += amount;
+        categoryTotals[category] = (categoryTotals[category] || 0) + amount;
     });
-    
-    // Sort months
-    const sortedMonths = Object.keys(monthlyData).sort();
-    
-    // Prepare chart data
-    const labels = sortedMonths.map(m => {
-        const [year, month] = m.split('-');
-        return `${year}/${month}`;
-    });
-    
-    // Get all breakdown values
-    const allBreakdownValues = [...new Set(
-        Object.values(breakdownData).flatMap(obj => Object.keys(obj))
-    )].sort();
-    
-    let datasets;
-    
-    if (allBreakdownValues.length <= 1 || (selectedProject && selectedCategory)) {
-        // Single dimension - simple bar
-        datasets = [{
-            label: 'Total Expenses',
-            data: sortedMonths.map(m => monthlyData[m] || 0),
-            backgroundColor: CHART_COLORS[0],
-            borderColor: CHART_COLORS[0],
-            borderWidth: 0,
-            borderRadius: 6,
-            borderSkipped: false
-        }];
-    } else {
-        // Multiple dimensions - stacked bar
-        datasets = allBreakdownValues.map((val, idx) => ({
-            label: val,
-            data: sortedMonths.map(m => (breakdownData[m] && breakdownData[m][val]) || 0),
-            backgroundColor: CHART_COLORS[idx % CHART_COLORS.length],
-            borderColor: CHART_COLORS[idx % CHART_COLORS.length],
-            borderWidth: 0,
-            borderRadius: 4,
-            borderSkipped: false
-        }));
-    }
-    
-    // Destroy existing chart
+
+    // Sort categories by amount descending
+    const sortedCategories = Object.keys(categoryTotals).sort(
+        (a, b) => categoryTotals[b] - categoryTotals[a],
+    );
+    const amounts = sortedCategories.map((c) => categoryTotals[c]);
+    const colors = sortedCategories.map((_, idx) => CHART_COLORS[idx % CHART_COLORS.length]);
+
     if (expenseChart) {
         expenseChart.destroy();
     }
-    
-    // Create chart
+
     const ctx = document.getElementById('expense-chart').getContext('2d');
     expenseChart = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: labels,
-            datasets: datasets
+            labels: sortedCategories,
+            datasets: [{
+                label: 'Amount (HKD)',
+                data: amounts,
+                backgroundColor: colors,
+                borderColor: colors,
+                borderWidth: 0,
+                borderRadius: 4,
+                borderSkipped: false,
+            }],
         },
         options: {
+            indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    display: datasets.length > 1,
-                    position: 'bottom',
-                    labels: {
-                        color: '#4B5563',
-                        font: {
-                            family: "'Source Sans 3', sans-serif",
-                            size: 11
-                        },
-                        padding: 12,
-                        usePointStyle: true,
-                        pointStyle: 'rect'
-                    }
+                    display: false,
                 },
                 tooltip: {
                     backgroundColor: '#FFFFFF',
@@ -577,74 +508,68 @@ function renderExpenseChart() {
                     borderWidth: 1,
                     padding: 10,
                     cornerRadius: 4,
-                    mode: 'index',
                     titleFont: {
                         family: "'Source Sans 3', sans-serif",
                         size: 12,
-                        weight: 600
+                        weight: 600,
                     },
                     bodyFont: {
-                        family: "Verdana, Geneva, sans-serif",
-                        size: 11
+                        family: 'Verdana, Geneva, sans-serif',
+                        size: 11,
                     },
                     callbacks: {
-                        label: function(context) {
-                            return null; // Don't show group values
+                        label: function (context) {
+                            const value = context.raw || 0;
+                            return `HKD ${Number(value).toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                            })}`;
                         },
-                        afterBody: function(tooltipItems) {
-                            // Calculate and display summary value
-                            let total = 0;
-                            tooltipItems.forEach(item => {
-                                total += item.raw || 0;
-                            });
-                            return `Total: HKD ${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                        }
-                    }
-                }
+                    },
+                },
             },
             scales: {
                 x: {
-                    stacked: datasets.length > 1,
-                    grid: {
-                        color: '#F3F4F6',
-                        drawBorder: false
-                    },
-                    ticks: {
-                        color: '#6B7280',
-                        font: {
-                            family: "'Source Sans 3', sans-serif",
-                            size: 11
-                        }
-                    }
-                },
-                y: {
-                    stacked: datasets.length > 1,
                     beginAtZero: true,
                     grid: {
                         color: '#F3F4F6',
-                        drawBorder: false
+                        drawBorder: false,
                     },
                     ticks: {
                         color: '#6B7280',
                         font: {
-                            family: "Verdana, Geneva, sans-serif",
-                            size: 10
+                            family: 'Verdana, Geneva, sans-serif',
+                            size: 10,
                         },
-                        callback: function(value) {
+                        callback: function (value) {
                             if (value >= 1000) {
                                 return 'HKD ' + (value / 1000).toLocaleString() + 'K';
                             }
                             return 'HKD ' + value.toLocaleString();
-                        }
-                    }
-                }
+                        },
+                    },
+                },
+                y: {
+                    grid: {
+                        display: false,
+                        drawBorder: false,
+                    },
+                    ticks: {
+                        color: '#4B5563',
+                        font: {
+                            family: "'Source Sans 3', sans-serif",
+                            size: 12,
+                        },
+                    },
+                },
             },
             layout: {
                 padding: {
-                    left: 10
-                }
-            }
-        }
+                    left: 10,
+                    right: 16,
+                },
+            },
+        },
     });
 }
 
