@@ -1486,11 +1486,48 @@ function renderReviewRecords() {
 }
 
 function toggleReviewed(rowNum) {
+    let isReviewed;
     if (reviewedRows.has(rowNum)) {
         reviewedRows.delete(rowNum);
+        isReviewed = false;
     } else {
         reviewedRows.add(rowNum);
+        isReviewed = true;
     }
+    const row = document.querySelector(`.review-row[data-row="${rowNum}"]`);
+    if (row) row.classList.toggle('reviewed', isReviewed);
+}
+
+function clearReviewDetailPanel() {
+    selectedRecordRow = null;
+    document.getElementById('review-detail-form').innerHTML = '<h3>Invoice Details</h3><p style="color: #888;">Select a record from the left to view details</p>';
+    document.getElementById('attachment-container').innerHTML = '<p style="color: #888;">No attachment available</p>';
+}
+
+function removeReviewRecordsLocally(rowNumbers, { removeDuplicateReferences = false } = {}) {
+    const removedRows = new Set(Array.from(rowNumbers, value => Number(value)));
+    if (removedRows.size === 0) return;
+
+    reviewRecords = reviewRecords.filter(
+        record => !removedRows.has(Number(record._rowNumber))
+    );
+    for (const rowNumber of removedRows) reviewedRows.delete(rowNumber);
+
+    if (removeDuplicateReferences) {
+        reviewRecords = reviewRecords.map(record => ({
+            ...record,
+            duplicate_matches: Array.isArray(record.duplicate_matches)
+                ? record.duplicate_matches.filter(match => !removedRows.has(Number(match.id)))
+                : record.duplicate_matches
+        }));
+    }
+
+    if (selectedRecordRow !== null && removedRows.has(Number(selectedRecordRow))) {
+        clearReviewDetailPanel();
+    }
+
+    const countEl = document.getElementById('review-record-count');
+    if (countEl) countEl.textContent = `${reviewRecords.length} records`;
     renderReviewRecords();
 }
 
@@ -1521,6 +1558,7 @@ async function deleteInvoiceRecord(rowNum) {
         const json = await res.json();
 
         if (json.success) {
+            removeReviewRecordsLocally([rowNum], { removeDuplicateReferences: true });
             if (json.partial) {
                 const detailLines = formatCleanupErrors(json.details);
                 alert(
@@ -1528,16 +1566,6 @@ async function deleteInvoiceRecord(rowNum) {
                     'It will be retried automatically.\n\n' +
                     (detailLines || 'No further details.')
                 );
-            } else {
-                alert('Record deleted successfully from all sources.');
-            }
-            // Refresh the list either way — record is gone from the user's view.
-            await loadReviewRecords();
-            // Clear detail panel if the deleted record was selected
-            if (selectedRecordRow === rowNum) {
-                selectedRecordRow = null;
-                document.getElementById('review-detail-form').innerHTML = '<h3>Invoice Details</h3><p style="color: #888;">Select a record from the left to view details</p>';
-                document.getElementById('attachment-container').innerHTML = '<p style="color: #888;">No attachment available</p>';
             }
         } else {
             const detailLines = formatCleanupErrors(json.details);
@@ -1645,6 +1673,7 @@ async function submitReviewedRecords() {
 
     let successCount = 0;
     let errorCount = 0;
+    const successfulRows = new Set();
 
     try {
         for (let i = 0; i < recordsToSubmit.length; i++) {
@@ -1666,6 +1695,7 @@ async function submitReviewedRecords() {
                 if (json.success) {
                     successCount++;
                     reviewedRows.delete(record.rowNumber);
+                    successfulRows.add(record.rowNumber);
                     progressDetails.innerHTML += `<div class="item success">✓ Row ${record.rowNumber}: ${record.projectCode} - ${record.amount}${record.currency}</div>`;
                 } else {
                     errorCount++;
@@ -1690,10 +1720,10 @@ async function submitReviewedRecords() {
             progressStatus.textContent = `Success: ${successCount}, Failed: ${errorCount}`;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        removeReviewRecordsLocally(successfulRows);
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         progressModal.style.display = 'none';
-        await loadReviewRecords();
 
     } catch (e) {
         console.error('Submit error:', e);
@@ -1709,8 +1739,14 @@ window.submitReviewedRecords = submitReviewedRecords;
 
 function selectRecord(idx) {
     const record = reviewRecords[idx];
+    if (!record) return;
     selectedRecordRow = record._rowNumber;
-    renderReviewRecords();
+    document.querySelectorAll('.review-row').forEach(row => {
+        row.classList.toggle(
+            'selected',
+            Number(row.dataset.row) === Number(selectedRecordRow)
+        );
+    });
     renderDetailForm(record);
     renderAttachmentPreview(record);
 }
