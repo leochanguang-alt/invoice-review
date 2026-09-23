@@ -3208,7 +3208,9 @@ function renderReconTransactions() {
             </div>`;
         } else if (tx.is_fee) {
             matchCell = '<span style="color:#94a3b8;">Fee — no invoice</span>';
-            actionCell = '';
+            actionCell = `<div class="recon-actions">
+                <button type="button" class="btn-unmatch" data-unmatch="${tx.id}" title="Abandon matching">Unmatch</button>
+            </div>`;
         } else {
             const suggestions = tx.suggestions || [];
             if (suggestions.length) {
@@ -3221,10 +3223,13 @@ function renderReconTransactions() {
                 actionCell = `<div class="recon-actions">
                     <button type="button" class="btn-view-invoice" data-view-candidate="${tx.id}">View</button>
                     <button type="button" class="btn-match" data-match="${tx.id}">Match</button>
+                    <button type="button" class="btn-unmatch" data-unmatch="${tx.id}" title="Abandon matching">Unmatch</button>
                 </div>`;
             } else {
                 matchCell = '<span style="color:#94a3b8;">No candidate</span>';
-                actionCell = '';
+                actionCell = `<div class="recon-actions">
+                    <button type="button" class="btn-unmatch" data-unmatch="${tx.id}" title="Abandon matching">Unmatch</button>
+                </div>`;
             }
         }
 
@@ -3380,6 +3385,13 @@ async function matchReconTransaction(txId) {
 }
 
 async function unmatchReconTransaction(txId) {
+    const tx = reconTransactions.find((t) => String(t.id) === String(txId));
+    const isMatched = Boolean(tx?.matched_invoice_id);
+    const confirmMsg = isMatched
+        ? 'Unmatch this transaction from its invoice?'
+        : 'Abandon matching for this transaction? It will be hidden from the Unmatched list.';
+    if (!confirm(confirmMsg)) return;
+
     try {
         const res = await fetch('/api/manage', {
             method: 'POST',
@@ -3394,7 +3406,15 @@ async function unmatchReconTransaction(txId) {
             alert(json.message || 'Unmatch failed');
             return;
         }
-        // Reload this statement's txs to refresh suggestions
+
+        if (json.mode === 'ignored' || (!isMatched && json.success)) {
+            // Remove from local list when abandoning unmatched rows
+            reconTransactions = reconTransactions.filter((t) => String(t.id) !== String(txId));
+            renderReconTransactions();
+            return;
+        }
+
+        // Unlinked matched pair — reload to refresh suggestions
         await loadReconTransactions(reconSelectedStatementId);
         const stmt = reconStatements.find((s) => String(s.id) === String(reconSelectedStatementId));
         if (stmt && stmt.matched_count > 0) stmt.matched_count -= 1;
