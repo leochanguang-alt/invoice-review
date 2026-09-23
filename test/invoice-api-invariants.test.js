@@ -60,6 +60,24 @@ test("manage sequence lookup excludes deleted rows and rejects a missing row", a
     );
 });
 
+test("manage maps project date fields during updates", async () => {
+    const source = await readApi("manage.js");
+    const projectUpdateStart = source.indexOf("} else if (tableKey === 'projects') {", source.indexOf('action === "update"'));
+    const projectUpdateBlock = source.slice(
+        projectUpdateStart,
+        source.indexOf("} else if (tableKey === 'owner') {", projectUpdateStart),
+    );
+
+    assert.match(
+        projectUpdateBlock,
+        /data\[['"]Create Date['"]\][\s\S]*updateData\.create_date/,
+    );
+    assert.match(
+        projectUpdateBlock,
+        /data\[['"]End Date['"]\][\s\S]*updateData\.end_date/,
+    );
+});
+
 test("manage rejects ambiguous generated invoice IDs without using single or bulk updating", async () => {
     const source = await readApi("manage.js");
     const rejectStart = source.indexOf('if (action === "reject-invoices")');

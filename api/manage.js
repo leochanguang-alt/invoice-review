@@ -718,6 +718,10 @@ export default async function handler(req, res) {
                     if (data['Project Name'] !== undefined) updateData.project_name = data['Project Name'];
                     if (data['Project Code'] !== undefined) updateData.project_code = data['Project Code'];
                     if (data['Company_ID'] !== undefined) updateData.company_id = data['Company_ID'];
+                    if (data['Create Date'] !== undefined) updateData.create_date = data['Create Date'] || null;
+                    else if (data['create_date'] !== undefined) updateData.create_date = data['create_date'] || null;
+                    if (data['End Date'] !== undefined) updateData.end_date = data['End Date'] || null;
+                    else if (data['end_date'] !== undefined) updateData.end_date = data['end_date'] || null;
                     if (data['Project Owner'] !== undefined) updateData.project_owner = data['Project Owner'];
                     // Handle Status field: convert 'Achieved'/'Active' to boolean archived
                     if (data['Status'] !== undefined) {

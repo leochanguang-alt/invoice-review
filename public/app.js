@@ -2136,9 +2136,25 @@ async function saveRecordChanges() {
         }
 
         if (result.json.success) {
-            await loadReviewRecords();
             if (result.json.sequenceReset) {
+                // Server reset invoice numbering/archive fields — full reload to reflect changes
+                await loadReviewRecords();
                 alert(result.json.warning || 'Invoice numbering and archive fields were reset. The existing R2 archive object was retained.');
+            } else {
+                // Update the local record in place and re-render the table without a full refetch,
+                // so the UI doesn't flash "Loading..." on every save.
+                const idx = reviewRecords.findIndex(r => Number(r._rowNumber) === Number(rowNumber));
+                if (idx !== -1) {
+                    const updated = { ...reviewRecords[idx] };
+                    for (const [label, value] of Object.entries(rawData)) {
+                        updated[label] = value;
+                    }
+                    reviewRecords[idx] = updated;
+                    renderReviewRecords();
+                    renderDetailForm(updated);
+                } else {
+                    await loadReviewRecords();
+                }
             }
         } else {
             alert('Failed to save: ' + result.json.message);

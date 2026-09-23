@@ -134,7 +134,10 @@ export default async function handler(req, res) {
                 
                 const urlMatch = decodedLink.match(/bui_invoice\/.*$/);
                 if (urlMatch) {
-                    originalKey = urlMatch[0].split(/[?#]/, 1)[0];
+                    // Only strip a query string (?...). Keep '#' in the key — R2 object keys
+                    // legitimately contain '#' (e.g. "Receipt from Mouse Tail Coffee #Hfu2.pdf"),
+                    // and treating it as a URL fragment would truncate the key and break archiving.
+                    originalKey = urlMatch[0].split('?', 1)[0];
                     fileExtension = extensionFromOldKey(originalKey);
                     console.log(`[SUBMIT] Found original key from DB R2 link: ${originalKey}`);
                 }
@@ -145,7 +148,7 @@ export default async function handler(req, res) {
                 try {
                     // Check if fileId is already an R2 key path
                     if (fileId.includes('/')) {
-                        originalKey = fileId.split(/[?#]/, 1)[0];
+                        originalKey = fileId.split('?', 1)[0];
                         fileExtension = extensionFromOldKey(originalKey);
                     } else {
                         // fileId is a Google Drive ID - try to find the file in R2

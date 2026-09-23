@@ -111,3 +111,17 @@ test("extracts an extension from the basename after removing URL query and fragm
     );
     assert.equal(extensionFromOldKey("folder.pdf/no-extension?token=.jpg"), ".pdf");
 });
+
+test("preserves a '#' inside the basename (R2 keys legitimately contain '#')", () => {
+    // Regression: "Receipt from Mouse Tail Coffee #Hfu2.pdf" must keep its .pdf
+    // extension. Previously split(/[?#]/) cut the key at '#' and defaulted to .pdf
+    // only by luck; a .jpg with '#' would have been mis-detected as .pdf.
+    assert.equal(
+        extensionFromOldKey("bui_invoice/original_files/fr_google_drive/Receipt from Mouse Tail Coffee #Hfu2.pdf"),
+        ".pdf",
+    );
+    assert.equal(
+        extensionFromOldKey("bui_invoice/original_files/fr_google_drive/Receipt from Mouse Tail Coffee #Hfu2.jpg"),
+        ".jpg",
+    );
+});
