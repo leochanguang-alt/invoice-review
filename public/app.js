@@ -455,6 +455,81 @@ function getFilteredData() {
     return filteredData;
 }
 
+function formatHkdAmount(value) {
+    return `HKD ${Number(value || 0).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}`;
+}
+
+function summarizeFilterSelection(selectedValue, valuesFromData, allLabel = 'All') {
+    if (selectedValue) return selectedValue;
+    const unique = [...new Set((valuesFromData || []).filter(Boolean))];
+    if (unique.length === 0) return '—';
+    if (unique.length === 1) return unique[0];
+    return allLabel;
+}
+
+// Draw amount labels to the right of each horizontal bar
+const categoryBarValueLabelsPlugin = {
+    id: 'categoryBarValueLabels',
+    afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || meta.hidden) return;
+
+        ctx.save();
+        ctx.font = "600 12px 'Source Sans 3', sans-serif";
+        ctx.fillStyle = '#111827';
+        ctx.textBaseline = 'middle';
+
+        meta.data.forEach((bar, index) => {
+            const raw = chart.data.datasets[0].data[index];
+            if (raw == null) return;
+            const label = formatHkdAmount(raw);
+            const { x, y } = bar.getProps(['x', 'y'], true);
+            const textWidth = ctx.measureText(label).width;
+            const chartRight = chart.chartArea.right;
+            const padding = 8;
+
+            // Prefer label to the right of the bar; if it would clip, place just inside.
+            let textX = x + padding;
+            ctx.textAlign = 'left';
+            if (textX + textWidth > chartRight - 4) {
+                textX = Math.max(chart.chartArea.left + 4, x - padding);
+                ctx.textAlign = 'right';
+                ctx.fillStyle = '#FFFFFF';
+            } else {
+                ctx.fillStyle = '#111827';
+            }
+            ctx.fillText(label, textX, y);
+        });
+        ctx.restore();
+    },
+};
+
+function updateExpenseChartSummary(filteredData, totalAmount) {
+    const companyEl = document.getElementById('expense-summary-company');
+    const projectEl = document.getElementById('expense-summary-project');
+    const totalEl = document.getElementById('expense-summary-total');
+    if (!companyEl || !projectEl || !totalEl) return;
+
+    const selectedCompany = document.getElementById('filter-company')?.value || '';
+    const selectedProject = document.getElementById('filter-project')?.value || '';
+
+    companyEl.textContent = summarizeFilterSelection(
+        selectedCompany,
+        filteredData.map((d) => d['Charge to Company']),
+        'All',
+    );
+    projectEl.textContent = summarizeFilterSelection(
+        selectedProject,
+        filteredData.map((d) => d['Charge to Project']),
+        'All',
+    );
+    totalEl.textContent = formatHkdAmount(totalAmount);
+}
+
 function renderExpenseChart() {
     const filteredData = getFilteredData();
 
@@ -472,6 +547,9 @@ function renderExpenseChart() {
     );
     const amounts = sortedCategories.map((c) => categoryTotals[c]);
     const colors = sortedCategories.map((_, idx) => CHART_COLORS[idx % CHART_COLORS.length]);
+    const totalAmount = amounts.reduce((sum, n) => sum + n, 0);
+
+    updateExpenseChartSummary(filteredData, totalAmount);
 
     if (expenseChart) {
         expenseChart.destroy();
@@ -519,11 +597,7 @@ function renderExpenseChart() {
                     },
                     callbacks: {
                         label: function (context) {
-                            const value = context.raw || 0;
-                            return `HKD ${Number(value).toLocaleString('en-US', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                            })}`;
+                            return formatHkdAmount(context.raw || 0);
                         },
                     },
                 },
@@ -531,6 +605,8 @@ function renderExpenseChart() {
             scales: {
                 x: {
                     beginAtZero: true,
+                    // Leave room so value labels fit to the right of bars
+                    grace: '12%',
                     grid: {
                         color: '#F3F4F6',
                         drawBorder: false,
@@ -566,10 +642,11 @@ function renderExpenseChart() {
             layout: {
                 padding: {
                     left: 10,
-                    right: 16,
+                    right: 72,
                 },
             },
         },
+        plugins: [categoryBarValueLabelsPlugin],
     });
 }
 

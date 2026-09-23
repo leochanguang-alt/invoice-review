@@ -293,6 +293,41 @@ tr:hover td {
   margin-bottom: 0.5rem;
 }
 
+.expense-chart-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: baseline;
+  padding: 0.85rem 0.25rem 0.25rem;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 0.25rem;
+}
+
+.expense-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 140px;
+}
+
+.expense-summary-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.expense-summary-value {
+  font-size: 0.95rem;
+  color: #111827;
+  font-weight: 600;
+}
+
+.expense-summary-total .expense-summary-value {
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+}
+
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
