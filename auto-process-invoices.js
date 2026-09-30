@@ -4,9 +4,9 @@ import fs from 'fs';
 import path from 'path';
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { supabase } from './lib/_supabase.js';
-import { getCurrencyList, linkCurrencyCountry } from './lib/currency-country-link.js';
+import { getCurrencyList } from './lib/currency-country-link.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { generateContentWithFallback } from './lib/_gemini.js';
+import { extractInvoiceFields, mimeTypeForFile } from './lib/invoice-extract.js';
 
 // R2 Configuration
 const r2 = new S3Client({
@@ -46,33 +46,11 @@ async function streamToBuffer(stream) {
     return Buffer.concat(chunks);
 }
 
-function getMimeType(filename) {
-    const ext = filename.toLowerCase().split('.').pop();
-    const mimeTypes = {
-        'pdf': 'application/pdf',
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'png': 'image/png',
-        'gif': 'image/gif',
-        'webp': 'image/webp'
-    };
-    return mimeTypes[ext] || 'application/octet-stream';
-}
-
 // Get current record count from Supabase
 async function getRecordCount() {
     const { count } = await supabase.from('invoices').select('*', { count: 'exact', head: true });
     return count || 0;
 }
-
-const cleanAmount = (val) => {
-    if (typeof val === 'number') return val;
-    if (!val) return 0;
-    const cleaned = val.toString().replace(/[^\d.-]/g, '');
-    return parseFloat(cleaned) || 0;
-};
-
-const cleanString = (val) => (val || '').toString().trim();
 
 async function processInvoices() {
     console.log('--- Starting R2-Based Invoice Processing ---');
@@ -125,7 +103,7 @@ async function processInvoices() {
                     allFiles.push({
                         key: obj.Key,
                         name: filename,
-                        mimeType: getMimeType(filename),
+                        mimeType: mimeTypeForFile(filename),
                         size: obj.Size,
                         lastModified: obj.LastModified,
                         etag: obj.ETag?.replace(/"/g, '') // Extract ETag
@@ -190,68 +168,20 @@ async function processInvoices() {
                 const buffer = await streamToBuffer(getRes.Body);
 
                 // Gemini Extraction
-                const prompt = `Please analyze this invoice image. Extract the following information and return it in strict JSON format, without any Markdown formatting or explanatory text:
-invoice_number (invoice number)
-date (date, format YYYY-MM-DD)
-vendor_name (vendor name)
-City: (city where expense occurred)
-Country: (country where expense occurred)
-total_amount (total amount, numeric format)
-currency (currency unit, choose one: GBP/HKD/USD/EUR/SEK/DKK/CHF/CNY/CAD/AED)
-category (expense category, choose one: Hotel/Flight/Train/Taxi/Entertainment/office expense/Communication/IT expense/Meal)`;
-
-                const { result, modelName } = await generateContentWithFallback(genAI, [
-                    {
-                        inlineData: {
-                            data: buffer.toString('base64'),
-                            mimeType: file.mimeType
-                        }
-                    },
-                    prompt
-                ]);
-
-                const responseText = result.response.text();
+                const { fields, modelName } = await extractInvoiceFields(genAI, {
+                    bytes: buffer,
+                    mimeType: file.mimeType,
+                    currencyList,
+                });
                 console.log(`[GEMINI] Parsed with model: ${modelName}`);
-                let jsonStr = responseText;
-                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-                if (jsonMatch) jsonStr = jsonMatch[0];
-
-                const invoiceData = JSON.parse(jsonStr);
-
-                // Data Cleaning & Normalization
-                const getVal = (obj, keys) => {
-                    for (const k of keys) {
-                        if (obj[k] !== undefined && obj[k] !== null) return obj[k];
-                    }
-                    return null;
-                };
-
-                const rawDate = getVal(invoiceData, ['date', 'invoice_date']);
-                const rawVendor = getVal(invoiceData, ['vendor_name', 'vendor']);
-                const rawAmount = getVal(invoiceData, ['total_amount', 'amount']);
-                const rawCurrency = getVal(invoiceData, ['currency']);
-                const rawInvoiceNum = getVal(invoiceData, ['invoice_number', 'invoice_no']);
-                const rawCity = getVal(invoiceData, ['city', 'City', 'location_city']);
-                const rawCountry = getVal(invoiceData, ['country', 'Country']);
-                const rawCategory = getVal(invoiceData, ['category']);
 
                 const processedData = {
+                    ...fields,
                     file_ID_HASH_R2: file.etag,  // Use R2 ETag for consistency
                     // file_id:  // We do NOT set file_id here as we don't have the Google Drive ID
-                    invoice_date: cleanString(rawDate) || null,
-                    vendor: cleanString(rawVendor),
-                    amount: cleanAmount(rawAmount),
-                    currency: cleanString(rawCurrency),
-                    invoice_number: cleanString(rawInvoiceNum),
-                    location_city: cleanString(rawCity),
-                    country: cleanString(rawCountry),
-                    category: cleanString(rawCategory),
                     file_link_r2: `${R2_PUBLIC_URL_BASE}${file.key}`,  // New R2 link column
-                    // file_link: // Legacy column, stop populating or keep for backward compat? User said move to _r2.
                     status: 'Waiting for Confirm'
                 };
-
-                linkCurrencyCountry(processedData, currencyList);
 
                 console.log('Processed Data:', JSON.stringify(processedData, null, 2));
 

@@ -11,6 +11,7 @@ import {
     validateInvoiceProjectChange,
 } from "../lib/invoice-update-invariants.js";
 import { handleReconciliationAction } from "../lib/reconciliation-api.js";
+import { runDriveSync } from "../lib/drive-sync-run.js";
 
 // Currency-Country linking helper
 async function getCurrencyList() {
@@ -117,63 +118,6 @@ async function createR2ProjectFolder(folderName) {
     }
 }
 
-// Google Drive sync runs as a GitHub Actions workflow; the UI can trigger it on demand.
-const SYNC_REPO = process.env.GITHUB_REPO || "leochanguang-alt/invoice-review";
-const SYNC_WORKFLOW = process.env.GITHUB_SYNC_WORKFLOW || "process-invoices.yml";
-const SYNC_REF = process.env.GITHUB_SYNC_REF || "main";
-
-function githubHeaders(token) {
-    return {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "ems-manual-sync",
-        "Content-Type": "application/json",
-    };
-}
-
-async function dispatchDriveSync(token) {
-    const url = `https://api.github.com/repos/${SYNC_REPO}/actions/workflows/${SYNC_WORKFLOW}/dispatches`;
-    const response = await fetch(url, {
-        method: "POST",
-        headers: githubHeaders(token),
-        body: JSON.stringify({ ref: SYNC_REF }),
-    });
-
-    if (response.status === 204) return { ok: true };
-    const text = await response.text();
-    return { ok: false, status: response.status, message: text.slice(0, 300) };
-}
-
-async function fetchLatestSyncRun(token, { since } = {}) {
-    const url = `https://api.github.com/repos/${SYNC_REPO}/actions/workflows/${SYNC_WORKFLOW}/runs?per_page=10`;
-    const response = await fetch(url, { headers: githubHeaders(token) });
-    if (!response.ok) {
-        const text = await response.text();
-        return { ok: false, status: response.status, message: text.slice(0, 300) };
-    }
-
-    const payload = await response.json();
-    const runs = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs : [];
-    const sinceMs = since ? Date.parse(since) : NaN;
-    const candidates = Number.isNaN(sinceMs)
-        ? runs
-        : runs.filter(run => Date.parse(run.created_at) >= sinceMs - 60000);
-    const run = candidates[0] || runs[0] || null;
-
-    return {
-        ok: true,
-        run: run ? {
-            id: run.id,
-            status: run.status,
-            conclusion: run.conclusion,
-            created_at: run.created_at,
-            html_url: run.html_url,
-            event: run.event,
-        } : null,
-    };
-}
-
 function json(res, status, body) {
     res.statusCode = status;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -192,7 +136,6 @@ export default async function handler(req, res) {
                 action: req.query?.action,
                 statement_id: req.query?.statement_id,
                 status: req.query?.status,
-                since: req.query?.since,
             }
             : (typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {}));
         if (reconBody?.action && String(reconBody.action).startsWith("recon_")) {
@@ -201,39 +144,19 @@ export default async function handler(req, res) {
         }
 
         // === MANUAL GOOGLE DRIVE SYNC ===
-        if (reconBody?.action === "sync-drive" || reconBody?.action === "sync-status") {
-            const token = process.env.GITHUB_DISPATCH_TOKEN;
-            if (!token) {
-                return json(res, 503, {
-                    success: false,
-                    code: "SYNC_TOKEN_MISSING",
-                    message: "Manual sync is not configured (GITHUB_DISPATCH_TOKEN is missing)",
-                });
+        if (reconBody?.action === "sync-drive") {
+            try {
+                const result = await runDriveSync({ supabase }, { maxFiles: 5, budgetMs: 45000 });
+                console.log(
+                    `[MANAGE] Drive sync: scanned=${result.scanned} processed=${result.processed.length} `
+                    + `duplicates=${result.duplicates.length} skipped=${result.skippedCount} `
+                    + `pending=${result.pending} failed=${result.failed.length} in ${result.elapsedMs}ms`,
+                );
+                return json(res, 200, { success: true, ...result });
+            } catch (syncErr) {
+                console.error("[MANAGE] Drive sync failed:", syncErr);
+                return json(res, 500, { success: false, message: syncErr?.message || String(syncErr) });
             }
-
-            if (reconBody.action === "sync-drive") {
-                const requestedAt = new Date().toISOString();
-                const dispatch = await dispatchDriveSync(token);
-                if (!dispatch.ok) {
-                    console.error("[MANAGE] Drive sync dispatch failed:", dispatch.status, dispatch.message);
-                    return json(res, 502, {
-                        success: false,
-                        message: `GitHub rejected the sync request (HTTP ${dispatch.status})`,
-                    });
-                }
-                console.log(`[MANAGE] Drive sync dispatched at ${requestedAt}`);
-                return json(res, 200, { success: true, requestedAt });
-            }
-
-            const latest = await fetchLatestSyncRun(token, { since: reconBody.since });
-            if (!latest.ok) {
-                console.error("[MANAGE] Drive sync status failed:", latest.status, latest.message);
-                return json(res, 502, {
-                    success: false,
-                    message: `Could not read sync status (HTTP ${latest.status})`,
-                });
-            }
-            return json(res, 200, { success: true, run: latest.run });
         }
 
         if (req.method === "GET") {

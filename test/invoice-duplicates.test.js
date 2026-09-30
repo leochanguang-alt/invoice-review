@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
     annotateDuplicates,
+    findExistingDuplicate,
     invoicesAreDuplicates,
     isReviewableStatus,
 } from "../lib/invoice-duplicates.js";
@@ -139,4 +140,28 @@ test("isReviewableStatus keeps waiting and confirmed invoices", () => {
     assert.equal(isReviewableStatus("confirmed"), true);
     assert.equal(isReviewableStatus("Submitted"), false);
     assert.equal(isReviewableStatus(""), false);
+});
+
+test("findExistingDuplicate matches an extracted invoice that has no id yet", () => {
+    const stored = [
+        { id: 10565, vendor: "Uber", amount: "65.58", currency: "EUR", invoice_date: "2026-09-14" },
+        { id: 10600, vendor: "Uber", amount: "42.00", currency: "EUR", invoice_date: "2026-09-14" },
+    ];
+    const candidate = { vendor: "uber", amount: 65.58, currency: "eur", invoice_date: "2026-09-14" };
+
+    assert.equal(findExistingDuplicate(candidate, stored)?.id, 10565);
+});
+
+test("findExistingDuplicate does not match on a different amount or date", () => {
+    const stored = [{ id: 10565, vendor: "Uber", amount: "65.58", currency: "EUR", invoice_date: "2026-09-14" }];
+
+    assert.equal(findExistingDuplicate({ vendor: "Uber", amount: 65.59, currency: "EUR", invoice_date: "2026-09-14" }, stored), null);
+    assert.equal(findExistingDuplicate({ vendor: "Uber", amount: 65.58, currency: "EUR", invoice_date: "2026-09-15" }, stored), null);
+    assert.equal(findExistingDuplicate({ vendor: "Bolt", amount: 65.58, currency: "EUR", invoice_date: "2026-09-14" }, stored), null);
+});
+
+test("findExistingDuplicate tolerates an empty or missing store", () => {
+    const candidate = { vendor: "Uber", amount: 1, currency: "EUR", invoice_date: "2026-09-14" };
+    assert.equal(findExistingDuplicate(candidate, []), null);
+    assert.equal(findExistingDuplicate(candidate, null), null);
 });

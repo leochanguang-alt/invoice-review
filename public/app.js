@@ -1348,8 +1348,6 @@ function setupReviewActions() {
     if (syncBtn) syncBtn.onclick = syncDriveNow;
 }
 
-const SYNC_POLL_INTERVAL_MS = 6000;
-const SYNC_POLL_TIMEOUT_MS = 8 * 60 * 1000;
 let syncDriveRunning = false;
 
 function setSyncStatus(text, state = '') {
@@ -1357,6 +1355,20 @@ function setSyncStatus(text, state = '') {
     if (!el) return;
     el.textContent = text || '';
     el.className = state ? `sync-drive-status ${state}` : 'sync-drive-status';
+}
+
+function describeSyncResult(result) {
+    const parts = [];
+    const done = result.processed?.length || 0;
+
+    if (done === 0) parts.push('No new invoices');
+    else parts.push(`${done} invoice${done === 1 ? '' : 's'} parsed`);
+
+    if (result.duplicates?.length) parts.push(`${result.duplicates.length} duplicate skipped`);
+    if (result.pending > 0) parts.push(`${result.pending} still waiting — click again`);
+    if (result.failed?.length) parts.push(`${result.failed.length} failed`);
+
+    return parts.join(', ');
 }
 
 async function syncDriveNow() {
@@ -1369,57 +1381,27 @@ async function syncDriveNow() {
         btn.disabled = true;
         btn.textContent = '⟳ Syncing…';
     }
-    setSyncStatus('Starting sync…');
+    setSyncStatus('Checking Google Drive…');
 
     try {
-        const startRes = await fetch('/api/manage', {
+        const res = await fetch('/api/manage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'sync-drive' })
         });
-        const startJson = await startRes.json();
+        const json = await res.json();
 
-        if (!startJson.success) {
-            setSyncStatus(startJson.message || 'Could not start sync', 'error');
+        if (!json.success) {
+            setSyncStatus(json.message || 'Sync failed', 'error');
             return;
         }
 
-        setSyncStatus('Sync queued, usually takes 2–3 minutes…');
-        const deadline = Date.now() + SYNC_POLL_TIMEOUT_MS;
-        const since = encodeURIComponent(startJson.requestedAt || '');
+        if (json.processed?.length) await loadReviewRecords();
 
-        while (Date.now() < deadline) {
-            await new Promise(resolve => setTimeout(resolve, SYNC_POLL_INTERVAL_MS));
-
-            const statusRes = await fetch(`/api/manage?action=sync-status&since=${since}`);
-            const statusJson = await statusRes.json();
-            if (!statusJson.success) continue;
-
-            const run = statusJson.run;
-            if (!run) continue;
-
-            if (run.status !== 'completed') {
-                setSyncStatus(run.status === 'queued' ? 'Waiting for a runner…' : 'Parsing invoices…');
-                continue;
-            }
-
-            if (run.conclusion === 'success') {
-                const before = reviewRecords.length;
-                await loadReviewRecords();
-                const added = reviewRecords.length - before;
-                setSyncStatus(
-                    added > 0
-                        ? `Sync done, ${added} new invoice${added === 1 ? '' : 's'}`
-                        : 'Sync done, no new invoices',
-                    'ok'
-                );
-            } else {
-                setSyncStatus(`Sync failed (${run.conclusion || 'unknown'})`, 'error');
-            }
-            return;
+        if (json.failed?.length) {
+            console.warn('Drive sync failures', json.failed);
         }
-
-        setSyncStatus('Still running, refresh later to see new invoices');
+        setSyncStatus(describeSyncResult(json), json.failed?.length ? 'error' : 'ok');
     } catch (e) {
         console.error('Drive sync failed', e);
         setSyncStatus('Sync request failed', 'error');
