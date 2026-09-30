@@ -681,6 +681,19 @@ tr:hover td {
   color: var(--text-bright);
 }
 
+.sync-drive-status {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.sync-drive-status.ok {
+  color: var(--success);
+}
+
+.sync-drive-status.error {
+  color: var(--danger);
+}
+
 .btn-small {
   padding: 0.4rem 0.8rem;
   font-size: 0.75rem;

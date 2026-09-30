@@ -1343,6 +1343,93 @@ function setupReviewActions() {
     const deselectAllBtn = document.getElementById('deselect-all-btn');
     if (selectAllBtn) selectAllBtn.onclick = () => selectAllRows(true);
     if (deselectAllBtn) deselectAllBtn.onclick = () => selectAllRows(false);
+
+    const syncBtn = document.getElementById('sync-drive-btn');
+    if (syncBtn) syncBtn.onclick = syncDriveNow;
+}
+
+const SYNC_POLL_INTERVAL_MS = 6000;
+const SYNC_POLL_TIMEOUT_MS = 8 * 60 * 1000;
+let syncDriveRunning = false;
+
+function setSyncStatus(text, state = '') {
+    const el = document.getElementById('sync-drive-status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = state ? `sync-drive-status ${state}` : 'sync-drive-status';
+}
+
+async function syncDriveNow() {
+    if (syncDriveRunning) return;
+
+    const btn = document.getElementById('sync-drive-btn');
+    const originalText = btn ? btn.textContent : '';
+    syncDriveRunning = true;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⟳ Syncing…';
+    }
+    setSyncStatus('Starting sync…');
+
+    try {
+        const startRes = await fetch('/api/manage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'sync-drive' })
+        });
+        const startJson = await startRes.json();
+
+        if (!startJson.success) {
+            setSyncStatus(startJson.message || 'Could not start sync', 'error');
+            return;
+        }
+
+        setSyncStatus('Sync queued, usually takes 2–3 minutes…');
+        const deadline = Date.now() + SYNC_POLL_TIMEOUT_MS;
+        const since = encodeURIComponent(startJson.requestedAt || '');
+
+        while (Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, SYNC_POLL_INTERVAL_MS));
+
+            const statusRes = await fetch(`/api/manage?action=sync-status&since=${since}`);
+            const statusJson = await statusRes.json();
+            if (!statusJson.success) continue;
+
+            const run = statusJson.run;
+            if (!run) continue;
+
+            if (run.status !== 'completed') {
+                setSyncStatus(run.status === 'queued' ? 'Waiting for a runner…' : 'Parsing invoices…');
+                continue;
+            }
+
+            if (run.conclusion === 'success') {
+                const before = reviewRecords.length;
+                await loadReviewRecords();
+                const added = reviewRecords.length - before;
+                setSyncStatus(
+                    added > 0
+                        ? `Sync done, ${added} new invoice${added === 1 ? '' : 's'}`
+                        : 'Sync done, no new invoices',
+                    'ok'
+                );
+            } else {
+                setSyncStatus(`Sync failed (${run.conclusion || 'unknown'})`, 'error');
+            }
+            return;
+        }
+
+        setSyncStatus('Still running, refresh later to see new invoices');
+    } catch (e) {
+        console.error('Drive sync failed', e);
+        setSyncStatus('Sync request failed', 'error');
+    } finally {
+        syncDriveRunning = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText || '⟳ Sync Drive';
+        }
+    }
 }
 
 function selectAllRows(select) {
