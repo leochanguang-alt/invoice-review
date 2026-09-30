@@ -4,12 +4,12 @@ name: Auto Invoice Cloud Watcher
 
 on:
   schedule:
-    - cron: '22 * * * *' # Hourly, away from top-of-hour peaks
-  workflow_dispatch:      # Allow manual trigger
+    - cron: '22 * * * *' # Hourly, away from top-of-hour peaks (GitHub often delays/skips these)
+  workflow_dispatch:      # Manual trigger; also fired hourly by Supabase pg_cron job "trigger-invoice-workflow"
 
 concurrency:
   group: process-invoices
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   process-invoices:
