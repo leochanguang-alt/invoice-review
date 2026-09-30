@@ -238,7 +238,7 @@ category (expense category, choose one: Hotel/Flight/Train/Taxi/Entertainment/of
                 const processedData = {
                     file_ID_HASH_R2: file.etag,  // Use R2 ETag for consistency
                     // file_id:  // We do NOT set file_id here as we don't have the Google Drive ID
-                    invoice_date: cleanString(rawDate),
+                    invoice_date: cleanString(rawDate) || null,
                     vendor: cleanString(rawVendor),
                     amount: cleanAmount(rawAmount),
                     currency: cleanString(rawCurrency),
